@@ -1,0 +1,11 @@
+#!/bin/bash
+
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+if [ $1 = "-L" ]; then
+    cat ${SCRIPT_DIR}/gpu/list-flag/${_SPOOF_NODE_ID}
+elif [ $1 = "topo" ]; then
+    cat ${SCRIPT_DIR}/topo/${_SPOOF_NODE_ID}
+else
+    cat ${SCRIPT_DIR}/gpu/${_SPOOF_NODE_ID}
+fi

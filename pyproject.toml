@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-s -vv -rXfw"
+testpaths = ["tests"]
+
+[tool.nvcopyright_headers]
+license_type = "Apache v2"
+
+[[tool.nvcopyright_headers.rules]]
+comment_symbol = "#"
+include = [
+    "docker/Dockerfile.*",
+    "examples/**/*.py",
+    "src/**/*.py",
+    "tests/**/*.py",
+    "setup.py",
+    "Makefile"
+]
+exclude = []
