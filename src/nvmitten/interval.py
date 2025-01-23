@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,6 +15,10 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, List, Optional
+
+import math
+
+from .json_utils import JSONable
 
 
 @dataclass(eq=True, frozen=True)
@@ -101,3 +105,76 @@ class Interval:
         for tok in s.split(","):
             L.append(cls.from_str(tok))
         return L
+
+
+class NumericRange(JSONable):
+    def __init__(self,
+                 start: float,
+                 end: Optional[float] = None,
+                 rel_tol: Optional[float] = None,
+                 abs_tol: Optional[float] = None):
+        """Creates a NumericRange.
+
+        Args:
+            start (float): The start of the numeric range. If end is None, this is treated as the base value for either
+                           relative or absolute tolerance.
+            end (float): The end of the numeric range. If specified, must be greater than `start`. If unspecified,
+                         exactly 1 of `rel_tol` and `abs_tol` must not be None. (Default: None)
+            rel_tol (float): Relative tolerance. Ignored if end is not None. (Default: None)
+            abs_tol (float): Absolute tolerance. Ignored if end is not None or rel_tol is not None. (Default: None)
+        """
+        if end is not None:
+            assert start <= end, f"Range end {end} must be at least start {start}"
+            self.start = start
+            self.end = end
+        elif rel_tol is not None:
+            assert 0.0 <= rel_tol and rel_tol <= 1.0, f"Relative tolerance must be between 0 and 1, got {rel_tol}"
+            self.start = start * (1.0 - rel_tol)
+            self.end = start * (1.0 + rel_tol)
+
+            self._base = start
+            self._rel_tol = rel_tol
+        elif abs_tol is not None:
+            assert abs_tol >= 0, f"Absolute tolerance must be non-negative, got {abs_tol}"
+            self.start = start - abs_tol
+            self.end = start + abs_tol
+
+            self._base = start
+            self._abs_tol = abs_tol
+        else:
+            self.start = start
+            self.end = math.inf
+
+    def contains_range(self, other: NumericRange) -> bool:
+        return self.start <= other.start and other.end <= self.end
+
+    def contains_numeric(self, other: float) -> bool:
+        return self.start <= other and other <= self.end
+
+    def __eq__(self, o: Any) -> bool:
+        if not isinstance(o, NumericRange):
+            return NotImplemented
+        return self.start == o.start and self.end == o.end
+
+    def __str__(self):
+        if hasattr(self, "_abs_tol"):
+            return f"NumericRange(mode=Absolute, {self._base} plus/minus {self._abs_tol} [{self.start}, {self.end}])"
+        elif hasattr(self, "_rel_tol"):
+            return f"NumericRange(mode=Relative, {self._base} ~ {self._rel_tol} [{self.start}, {self.end}])"
+        else:
+            return f"NumericRange([{self.start}, {self.end}])"
+
+    def json_encode(self):
+        if hasattr(self, "_abs_tol"):
+            return {"start": self._base,
+                    "abs_tol": self._abs_tol}
+        elif hasattr(self, "_rel_tol"):
+            return {"start": self._base,
+                    "rel_tol": self._rel_tol}
+        else:
+            return {"start": self.start,
+                    "end": self.end}
+
+    @classmethod
+    def from_json(cls, d):
+        return NumericRange(**d)

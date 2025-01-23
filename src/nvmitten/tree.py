@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -185,7 +185,12 @@ class Tree:
             raise ValueError(f"Cannot insert node with duplicate name {child_node.name}")
         self.children[child_node.name] = child_node
 
-    def insert_value(self, name: str, value: Any, keyspace: Optional[Iterable[str]] = None) -> Tree:
+    def insert_value(self,
+                     name: str,
+                     value: Any,
+                     keyspace: Optional[Iterable[str]] = None,
+                     create_parents: bool = True,
+                     default_parent_value: Any = None) -> Tree:
         """Inserts a value into this node. The created child node will be the same class as its immediate parent.
 
         Args:
@@ -194,6 +199,9 @@ class Tree:
             keyspace (Iterable[str]): If specified, instead inserts the value in the node at the end of the walk
                                       starting from `self` represented by the names of the nodes given in
                                       `keyspace`. (Default: None)
+            create_parents (bool): If True, will create any necessary parent nodes for the walk for the given keyspace
+                                   using the `default_parent_value`.
+            default_parent_value (Any): Default value for parent nodes.
 
         Returns:
             Tree: The Tree that was created
@@ -204,6 +212,8 @@ class Tree:
         curr = self
         if keyspace:
             for key in keyspace:
+                if create_parents and key not in curr.children:
+                    curr.children[key] = curr.__class__(key, default_parent_value)
                 curr = curr.children[key]
         new_node = curr.__class__(name, value)
         curr.add_child(new_node)
@@ -249,6 +259,23 @@ class Tree:
             return
         else:
             del curr.children[keyspace[-1]]
+
+    def __contains__(self, keyspace: Iterable[str]):
+        """Checks if a node exists in this Tree.
+
+        Args:
+            keyspace (Iterable[str]): A list of strings representing names of the nodes in a walk of the tree. This
+                                      cannot be empty.
+        """
+        if len(keyspace) == 0:
+            raise ValueError(".delete cannot be called with an empty keyspace. Use `del` instead.")
+
+        curr = self
+        for name in keyspace:
+            if name not in curr.children:
+                return False
+            curr = curr.children[name]
+        return True
 
     def __getitem__(self, keyspace: Union[str, Iterable[str]]):
         """See `get()`.

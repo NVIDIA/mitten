@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ def codestringable(klass: ModuleType) -> ModuleType:
         ModuleType: `klass` after its init method has been modified
     """
     klass._base_init = klass.__init__
+
     def _new_init(ref, *args, **kwargs):
         ref._init_args = args
         ref._init_kwargs = kwargs

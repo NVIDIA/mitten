@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -73,6 +73,8 @@ class ByteSuffix(Enum):
 class Precision(AliasedNameEnum):
     """Different numeric precisions that can be used by benchmarks. Not all benchmarks can use all precisions."""
 
+    NVFP4: AliasedName = AliasedName("nvfp4")
+    FP8: AliasedName = AliasedName("fp8")
     INT8: AliasedName = AliasedName("int8")
     FP16: AliasedName = AliasedName("fp16")
     FP32: AliasedName = AliasedName("fp32")
@@ -92,10 +94,3 @@ class CPUArchitecture(AliasedNameEnum):
     """Various CPU Architectures"""
     x86_64: AliasedName = AliasedName("x86_64")
     aarch64: AliasedName = AliasedName("aarch64")
-
-
-@unique
-class AcceleratorType(AliasedNameEnum):
-    """Various accelerator types to describe how the CPU and GPU share memory"""
-    Discrete: AliasedName = AliasedName("Discrete")  # Accelerator has independent memory
-    Integrated: AliasedName = AliasedName("Integrated")  # Accelerator shares memory with CPU

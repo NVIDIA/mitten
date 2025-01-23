@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,121 +21,16 @@ from typing import Any, Dict, Optional, Tuple
 
 import graphlib
 import logging
-import shutil
+import time
+import traceback
 
 from .errors import *
-from ..memory import Memory
+from .operation import *
+from .scratch_space import ScratchSpace
+from ..debug import DebugManager, DebuggableMixin
 
 
-class ScratchSpace:
-    """Marks a directory to be used as the scratch space for a pipeline. Note that this class intentionally does not
-    include a method to delete the contents of a ScratchSpace, as it is common for the ScratchSpace to contain important
-    logs, large downloaded files such as datasets, or important DL model checkpoints. As such, a clear() or delete()
-    method is not provided to help prevent mishaps or accidents.
-
-    If you know what you're doing and would like to clear the contents of a scratch space, a deletion method is easily
-    implemented with shutil.rmtree.
-    """
-
-    def __init__(self, path: PathLike):
-        """Creates a ScratchSpace that corresponds to the given path.
-
-        Args:
-            path (PathLike): The path to the directory to use as the scratch space.
-        """
-        self.path = path
-        if not isinstance(path, Path):
-            self.path = Path(path)
-
-    def create(self):
-        if not self.path.exists():
-            self.path.mkdir(parents=True)
-
-    def working_dir(self, namespace: str = "") -> Path:
-        """Gets a working dir from the ScratchSpace under a namespace. In terms of the directory structure, the
-        namespace is simply a subdirectory. Also creates this directory if it does not yet exist.
-
-        Args:
-            namespace (str): The namespace of the working dir under this ScratchSpace. (Default: "")
-
-        Returns:
-            Path: The path to the working directory.
-        """
-        wd = self.path / Path(namespace)
-        if not wd.exists():
-            wd.mkdir(parents=True)
-        return wd
-
-
-@dataclass(frozen=True)
-class BenchmarkMetric:
-    """Defines a metric unit used for a Benchmark. Two metrics can only be compared if their units are equal.
-    """
-
-    unit: str
-    bigger_is_better: bool = True
-
-    def __eq__(self, other: Any) -> bool:
-        if self.__class__ is other.__class__:
-            return self.unit.upper() == other.unit.upper() and \
-                    self.bigger_is_better == other.bigger_is_better
-        else:
-            return NotImplemented
-
-
-class Impl:
-    """Represents an Operation with given outputs. Can be used by Operations to indicate requiring a dependency that
-    produces a certain output, but is agnostic to the implementation of that dependency.
-    """
-
-    @classmethod
-    def outputs(cls):
-        """Returns an Iterable of strings, representing the keys that are required to be in the output dictionary of any
-        Operation's run() method that is an implementation of this Impl.
-
-        If no outputs are required, this method should return None or an empty Iterable.
-        """
-        raise NotImplementedError
-
-
-class Operation(ABC):
-    """A Mitten Operation requires:
-        - A scratch space to work in, along with a namespace to use under the scratch space
-        - A set of Operations, representing immediate dependencies of this Operation
-    """
-
-    @classmethod
-    def implements(cls):
-        """Gets the Impl, if any, that this Operation implements.
-        """
-        return None
-
-    @abstractclassmethod
-    def immediate_dependencies(cls):
-        """Get the immediate dependencies of this operation.
-
-        Returns:
-            A set of classes. Each class in this set must be a subclass of Operation
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def run(self, scratch_space, dependency_outputs):
-        """Runs the Operation.
-
-        Args:
-            scratch_space (ScratchSpace): The ScratchSpace for this Operation.
-            dependency_outputs (Dict[str, Any]): A dict of named objects from outputs of this Operation's
-                                                 dependencies.
-
-        Returns:
-            If this Operation has objects that are consumed by upstream Operations, output a dict of str to object,
-            where the key is a unique name for this object. Otherwise, a bool indicating this Operation's success.
-        """
-        raise NotImplementedError
-
-
-class Pipeline:
+class Pipeline(DebuggableMixin):
     """A Mitten pipeline consists of the following:
         1. A graph of operations, each representing one step or phase of the pipeline.
         2. A pipeline-unified scratch space for the operations of the pipeline to share artifacts with
@@ -147,47 +42,65 @@ class Pipeline:
         self.config = config
 
         self.output_node = None
+        self._cache = None
 
-    def topo_sort(self) -> Tuple[Tuple[Operation, ...], Dict[Impl, Operation]]:
+    def topo_sort(self) -> Tuple[Tuple[Operation, ...], Dict[Operation, Operation]]:
         """Topologically sorts the operations and returns the sorted order of the operations, as well as a mapping of
-        found Impls to their implemented Operations.
+        found implementations of dependency Operations.
 
         Returns:
             Tuple[Operation, ...]: A tuple representing the ordering of operations sorted topologically by dependencies.
-            Dict[Impl, Operation]: A map implementing Impls to the Operation implementing them.
+            Dict[Operation, Operation]: A map of Operation-to-be-implemented to the implementation.
         """
-        # Create a mapping for implementations
         implementations = dict()
         for op in self.operations:
-            if impl := op.implements():
-                if not issubclass(impl, Impl):
-                    raise InvalidImplError(op, impl)
-                if impl in implementations:
-                    raise TooManyImplementationsError(impl, [implementations[impl], op])
-                implementations[impl] = op
+            for i in op.implements():
+                # TODO: Implement a way to configure this. For now just print a warning.
+                if i in implementations:
+                    logging.warning(f"Multiple implementations of {i} found. Defaulting to {implementations[i]}.")
+                else:
+                    implementations[i] = op
 
         g = dict()
         for op in self.operations:
-            _deps = op.immediate_dependencies()
-            if _deps is None:
+            requires = op.immediate_dependencies()
+            if requires is None:
                 g[op] = set()
                 continue
 
             deps = set()
-            for dep in _deps:
-                if issubclass(dep, Impl):
+            for dep in requires:
+                if dep in self.operations:
+                    # dep is directly satisfied, use directly
+                    deps.add(dep)
+
+                    # Warn if a child implementation was given and unused.
+                    if dep in implementations:
+                        impl = implementations[dep]
+                        msg = f"Operation {dep} has implementation {impl}, but is directly satisfied. " \
+                              f"Using {dep} instead."
+                        logging.warn(msg)
+                        implementations.pop(dep)
+                else:
+                    # dep is not directly satisfied, search for implementation
                     if dep not in implementations:
-                        raise ImplementationNotFoundError(op, impl)
-                    dep = implementations[dep]
-                deps.add(dep)
+                        raise ImplementationNotFoundError(op, dep)
+                    deps.add(implementations[dep])
             g[op] = set(deps)
+
         ts = graphlib.TopologicalSorter(g)
         return tuple(ts.static_order()), implementations
 
-    def run(self):
+    def run(self, early_stop: bool = False):
         """Runs the pipeline.
 
         Stores an internal cache of all Operation outputs which is used to forward inputs to dependent Operations.
+
+        Args:
+            early_stop (bool): If True, will stop pipeline execution as soon as the output node is reached and will
+                               return immediately. This is not recommended if all Operations are expected to run at
+                               least once, as the topologicaly sorted order of Operations may cause some Operations to
+                               not run. (Default: False)
 
         Returns:
             obj: The return value of this pipeline's output. If no output Operation is marked, the final executed
@@ -196,37 +109,71 @@ class Pipeline:
         if self.scratch_space:
             self.scratch_space.create()
 
-        cache = dict()
+        self._cache = dict()
         ordered, implementations = self.topo_sort()
+
         run_output = None
+        output_reached = False
         for op in ordered:
+            # Build inputs based on cache
             op_inputs = dict()
             if op.immediate_dependencies() is not None:
                 for dep in op.immediate_dependencies():
-                    if issubclass(dep, Impl):
-                        # If dependency is an Impl, forward the Impl's expected outputs.
+                    if dep in implementations:
+                        impl = implementations[dep]
+
+                        # Only take the set of keys that the specific dependency requires
                         _in = dict()
-                        for k in dep.outputs():
-                            _in[k] = cache[implementations[dep]][k]  # If k isn't in cache this will error.
+                        for k in dep.output_keys():
+                            _in[k] = self._cache[impl].value[k]  # If k isn't in cache this will implicitly error.
                         op_inputs[dep] = _in
                     else:
-                        if dep in cache and cache[dep]:
-                            op_inputs[dep] = cache[dep]
-            instance = op(**self.config.get(op, dict()))
-            run_output = instance.run(self.scratch_space, op_inputs)
-            if not run_output:
-                raise FailedOperationError(op, run_output)
-            if isinstance(run_output, dict):
-                cache[op] = run_output
+                        if dep in self._cache:
+                            op_inputs[dep] = self._cache[dep].value
+
+            status = None
+            run_output = None
+            exc = None
+            time_start = time.time_ns()
+            try:
+                if not output_reached:
+                    instance = op(**self.config.get(op, dict()))
+                    run_output = instance.run(self.scratch_space, op_inputs)
+                    exc = None
+                    status = OperationStatus.PASSED
+                else:
+                    status = OperationStatus.SKIPPED
+            except KeyboardInterrupt as _exc:
+                exc = KeyboardInterrupt
+                status = OperationStatus.INTERRUPTED
+            except Exception as _exc:
+                exc = _exc
+                status = OperationStatus.FAILED
+            finally:
+                tb = None
+                if exc is not None:
+                    tb = traceback.TracebackException.from_exception(exc)
+
+                res = OperationResult(status,
+                                      run_output,
+                                      time_start,
+                                      exception=exc,
+                                      trace=tb)
+                self._cache[op] = res
+
+                # Re-surface exception.
+                # TODO: Let DebugHandler handle retrieving the OperationResult cache and dumping it.
+                if exc is not None:
+                    raise exc
 
             # Early stop if we hit output node in our topo-sorted order.
-            if op is self.output_node:
-                return run_output
+            if early_stop and op is self.output_node:
+                output_reached = True
 
         if self.output_node is None:
             return run_output  # Output the final output of the graph
         else:
-            return cache[self.output_node]
+            return self._cache[self.output_node].value
 
     def mark_output(self, op: Operation):
         """Marks an Operation for output.

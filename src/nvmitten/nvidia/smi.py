@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ import shutil
 import subprocess
 
 from .constants import ComputeSM
+from .cupy import CUDAWrapper as cuda
 from ..utils import run_command
 
 
@@ -26,7 +27,8 @@ class NvSMI:
     """
 
     executable: Final[str] = "nvidia-smi"
-    """str: The executable for desktop/server/non-SoC systems to interact with the GPU. For NVIDIA, this is nvidia-smi."""
+    """str: The executable for desktop/server/non-SoC systems to interact with the GPU.
+    For NVIDIA, this is nvidia-smi."""
 
     command: Final[str] = f"CUDA_VISIBLE_ORDER=PCI_BUS_ID {executable}"
     """str: The command to actually run. In this case, CUDA_VISIBLE_ORDER is hard set to PCI_BUS_ID for consistency."""
@@ -109,7 +111,7 @@ class NvSMI:
     @staticmethod
     def get_compute_sm(gpu_id: int) -> Tuple[int, int]:
         """Returns the compute capability of a given GPU. Note that older versions of nvidia-smi do not have support to
-        query for this via --query-gpu, so PyCUDA is used as a fallback backend if this is the case.
+        query for this via --query-gpu, so there cuda-python is used as a fallback backend if this is the case.
 
         Args:
             gpu_id (int): The ID of the GPU to check.
@@ -126,13 +128,11 @@ class NvSMI:
             old_cuda_order = os.environ.get("CUDA_VISIBLE_ORDER", None)
             os.environ["CUDA_VISIBLE_ORDER"] = "PCI_BUS_ID"
             try:
-                # Lazily import pycuda as it is needed
-                import pycuda.driver as cuda
-                import pycuda.autoprimaryctx
-
-                d = cuda.Device(gpu_id)
-                major = d.get_attribute(cuda.device_attribute.COMPUTE_CAPABILITY_MAJOR)
-                minor = d.get_attribute(cuda.device_attribute.COMPUTE_CAPABILITY_MINOR)
+                cuda.cuInit(0)
+                device_attr_major = cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR
+                major = cuda.cuDeviceGetAttribute(device_attr_major, gpu_id)
+                device_attr_minor = cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR
+                minor = cuda.cuDeviceGetAttribute(device_attr_minor, gpu_id)
             finally:
                 if old_cuda_order is None:
                     del os.environ["CUDA_VISIBLE_ORDER"]

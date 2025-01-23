@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,11 @@
 
 
 import pytest
+import random
 
 from nvmitten.constants import ByteSuffix
 from nvmitten.memory import Memory
+from nvmitten.json_utils import loads, dumps
 
 
 @pytest.mark.parametrize(
@@ -63,3 +65,45 @@ def test_memory_from_string(s, expected_mem):
             Memory.from_string(s)
     else:
         assert Memory.from_string(s) == expected_mem
+
+@pytest.mark.parametrize(
+    "mem,o,expected,raised",
+    [
+        (Memory(1.0, ByteSuffix.KB), 5, Memory.to_1000_base(6 * 1000), None),
+        (Memory(1.0, ByteSuffix.KB), Memory(2, ByteSuffix.MB), Memory.to_1000_base(2001000), None),
+        (Memory(1.0, ByteSuffix.KB), "asdf", None, TypeError),
+        (Memory(1.0, ByteSuffix.KB), Memory(1, ByteSuffix.KiB), Memory.to_1000_base(2024), None),
+    ]
+)
+def test_memory_add(mem, o, expected, raised):
+    if raised is not None:
+        with pytest.raises(raised):
+            mem + o
+    else:
+        assert (mem + o) == expected
+
+@pytest.mark.parametrize(
+    "mem,o,expected,raised",
+    [
+        (Memory(2.0, ByteSuffix.KB), .5, Memory.to_1000_base(1000), None),
+        (Memory(1.0, ByteSuffix.KB), Memory(2, ByteSuffix.MB), None, TypeError),
+        (Memory(1.0, ByteSuffix.KB), "asdf", None, TypeError),
+        (Memory(2.0, ByteSuffix.KB), 16, Memory.to_1000_base(32000), None),
+    ]
+)
+def test_memory_mul(mem, o, expected, raised):
+    if raised is not None:
+        with pytest.raises(raised):
+            mem * o
+    else:
+        assert (mem * o) == expected
+
+def test_memory_json():
+    # Generate some random memory object
+    num_bytes = random.randint(1, 1e12)
+    m_1000 = Memory.to_1000_base(num_bytes)
+
+    s = dumps(m_1000)
+    new_m = loads(s)
+    assert m_1000 == new_m
+    assert new_m.byte_suffix.value[0] == 1000
