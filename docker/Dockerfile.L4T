@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM nvcr.io/nvidia/l4t-base:r35.2.1
+FROM nvcr.io/nvidia/l4t-jetpack:r36.2.0
 SHELL ["/bin/bash", "-c"]
 ARG MLCOMMONS_DIR=/opt/mlcommons
 ARG MLPERF_INFERENCE_DIR=${MLCOMMONS_DIR}/inference
@@ -52,6 +52,7 @@ RUN wget https://github.com/Kitware/CMake/releases/download/v3.25.0/cmake-3.25.0
 # Install gflags && glog
 RUN apt install -y libgoogle-glog-dev libgflags-dev
 
+
 # Install loadgen from MLCommons
 RUN mkdir -p ${MLCOMMONS_DIR} \
  && git clone https://github.com/mlcommons/inference.git ${MLPERF_INFERENCE_DIR} \
@@ -66,8 +67,10 @@ RUN mkdir -p ${LOADGEN_BUILD_DIR} \
  && cd ${LOADGEN_BUILD_DIR} \
  && cmake -DCMAKE_BUILD_TYPE=${LOADGEN_BUILD_TYPE} .. \
  && make -j
+RUN cd ${LOADGEN_DIR} \
+ && CFLAGS="-std=c++14 -O3" python3 -m pip install .
 
-# Setup environment variables for pycuda
+# Setup environment variables for cuda
 ENV CUDA_ROOT=/usr/local/cuda
 ENV CUDA_INC_DIR=${CUDA_ROOT}/include
 ENV PATH=${CUDA_ROOT}/bin:/usr/bin:${PATH}
@@ -75,13 +78,13 @@ ENV CPATH=${CUDA_ROOT}/include:${CPATH}
 ENV LIBRARY_PATH=${CUDA_ROOT}/lib64:${LIBRARY_PATH}
 ENV LD_LIBRARY_PATH=${CUDA_ROOT}/lib64:${LD_LIBRARY_PATH}
 
-RUN apt install python3.8-venv
+RUN python3 -m pip install cuda-python==12.2.1
 
 COPY . ${MITTEN_INSTALL_DIR}
 WORKDIR ${MITTEN_INSTALL_DIR}
 
 # RUN make install_deps
-# RUN make build && make install
+RUN make build && make install
 
 
 # With latest Ubuntu:20.04 container, there will be no 'python' or 'pip' even if we have installed 'python3' and

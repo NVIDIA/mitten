@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,50 +20,13 @@ import shutil
 from nvmitten.pipeline import *
 
 
-@pytest.mark.parametrize(
-    "ssroot,namespace",
-    [
-        ("/tmp/nvmitten/test/scratch_space", "a1"),
-        ("/tmp/nvmitten/test/scratch_space", "a2"),
-        ("/tmp/nvmitten/test/scratch_space", "a3"),
-        ("/tmp/nvmitten/test/scratch_space", ""),
-    ]
-)
-def test_scratch_space(ssroot, namespace):
-    # This test directly modifies the filesystem, so there is a small chance the test sporadically reports a false
-    # positive due to a directory existing due to external reasons, or a false negative if the directory was deleted by
-    # external reasons.
-    p = Path(ssroot)
-    if p.exists():
-        shutil.rmtree(p)
-    assert not p.exists()
-
-    ss = ScratchSpace(ssroot)
-    assert not p.exists()
-    ss.create()
-    assert p.exists()
-    wd = ss.working_dir(namespace=namespace)
-    assert wd.exists()
-
-
-@pytest.mark.parametrize(
-    "b1,b2,expected",
-    [
-        (BenchmarkMetric("img/s"), BenchmarkMetric("images per second"), False),
-        (BenchmarkMetric("img/s"), BenchmarkMetric("img/s"), True),
-        (BenchmarkMetric("img/s", bigger_is_better=False), BenchmarkMetric("images per second"), False),
-        (BenchmarkMetric("img/s"), BenchmarkMetric("img/s", bigger_is_better=False), False)
-    ]
-)
-def test_benchmark_metric(b1, b2, expected):
-    # TODO: BenchmarkMetric usage isn't well defined yet. This test isn't made to be too robust, but is just for
-    # coverage.
-    assert (b1 == b2) is expected
-
-
 class O1(Operation):
     def __init__(self, retval=True):
         self.retval = retval
+
+    @classmethod
+    def output_keys(cls):
+        return ["out1.1"]
 
     @classmethod
     def immediate_dependencies(cls):
@@ -71,28 +34,38 @@ class O1(Operation):
 
     def run(self, scratch_space, dependency_outputs):
         assert len(dependency_outputs) == 0  # O1 has no dependencies, so should receive no input.
-        return self.retval
+        return {"out1.1": self.retval}
 
 
 class O2(Operation):
+    @classmethod
+    def output_keys(cls):
+        return ["out2.1", "out2.2"]
+
     @classmethod
     def immediate_dependencies(cls):
         return [O1]
 
     def run(self, scratch_space, dependency_outputs):
-        assert len(dependency_outputs) == 0  # O1 is a dependency, but has no output values
+        assert len(dependency_outputs) == 1  # O1 is a dependency
+        assert O1 in dependency_outputs
         return {"out2.1": "hello",
                 "out2.2": "world"}
 
 
 class O3(Operation):
     @classmethod
+    def output_keys(cls):
+        return ["out3.1"]
+
+    @classmethod
     def immediate_dependencies(cls):
         return [O1, O2]
 
     def run(self, scratch_space, dependency_outputs):
         # Test 02 outputs are forwarded correctly in dependency_outputs
-        assert len(dependency_outputs) == 1
+        assert len(dependency_outputs) == 2
+        assert O1 in dependency_outputs
         assert O2 in dependency_outputs
         assert dependency_outputs[O2] == {"out2.1": "hello", "out2.2": "world"}
         return {"out3.1": "foo"}
@@ -107,13 +80,14 @@ class O4(Operation):
         # Test 02 and 03 outputs were both forwarded correctly
         assert len(dependency_outputs) == 2
         assert O2 in dependency_outputs
-        assert O3 in dependency_outputs
         assert dependency_outputs[O2] == {"out2.1": "hello", "out2.2": "world"}
+
+        assert O3 in dependency_outputs
         assert dependency_outputs[O3] == {"out3.1": "foo"}
         return {"out4.1": "bar"}
 
 
-def test_pipeline_toposort():
+def test_pipeline_toposort(debug_manager_io_stream):
     p = Pipeline(None, [O2, O3, O1, O4], dict())
     assert p.topo_sort() == ((O1, O2, O3, O4), dict())
 
@@ -121,27 +95,43 @@ def test_pipeline_toposort():
     assert p.topo_sort() == ((O1,), dict())
 
 
-def test_pipeline_config():
-    p = Pipeline(None, [O1], {O1: {"retval": {"out1.1": 1234}}})
+def test_pipeline_config(debug_manager_io_stream):
+    p = Pipeline(None, [O1], {O1: {"retval": 1234}})
     assert p.run() == {"out1.1": 1234}
 
 
-def test_pipeline_mark_output():
+def test_pipeline_mark_output(debug_manager_io_stream):
     p = Pipeline(None, [O2, O3, O1, O4], dict())
     p.mark_output(O3)
     assert p.run() == {"out3.1": "foo"}
 
 
-class FooImpl(Impl):
+def test_pipeline_early_stop(debug_manager_io_stream):
+    p = Pipeline(None, [O2, O3, O1, O4], dict())
+    p.mark_output(O3)
+    result_noES = p.run()
+    assert result_noES == {"out3.1": "foo"}
+    assert p._cache is not None
+    assert p._cache[O4].status is OperationStatus.PASSED
+    assert p._cache[O4].value == {"out4.1": "bar"}
+
+    result_ES = p.run(early_stop=True)
+    assert result_ES == {"out3.1": "foo"}
+    assert p._cache is not None
+    assert p._cache[O4].status is OperationStatus.SKIPPED
+    assert p._cache[O4].value is None
+
+
+class AbstractFoo(Operation):
     @classmethod
-    def outputs(cls):
+    def output_keys(cls):
         return ["foo1", "foo2"]
 
 
-class MyFoo(Operation):
+class MyFoo(AbstractFoo):
     @classmethod
-    def implements(cls):
-        return FooImpl
+    def output_keys(cls):
+        return ["foo1", "foo2"]
 
     @classmethod
     def immediate_dependencies(cls):
@@ -158,63 +148,78 @@ class MyFoo(Operation):
 class Bar(Operation):
     @classmethod
     def immediate_dependencies(cls):
-        return [FooImpl]
+        return [AbstractFoo]
 
     def run(self, scratch_space, dependency_outputs):
         assert len(dependency_outputs) == 1
-        assert FooImpl in dependency_outputs  # Key is Impl not Operation
-        assert "discarded" not in dependency_outputs[FooImpl]
-        assert dependency_outputs[FooImpl] == {"foo1": "helloworld", "foo2": "worldhello"}
-        return True
+        assert AbstractFoo in dependency_outputs  # Key is Abstract, not implementation
+        assert "discarded" not in dependency_outputs[AbstractFoo]
+        assert dependency_outputs[AbstractFoo] == {"foo1": "helloworld", "foo2": "worldhello"}
+        # No output keys
 
 
-def test_pipeline_impl():
+def test_pipeline_abstracts(debug_manager_io_stream):
     p = Pipeline(None, [O1, O2, MyFoo, Bar], dict())
     ordering, impls = p.topo_sort()
     assert ordering == (O1, O2, MyFoo, Bar)
-    assert impls == {FooImpl: MyFoo}
-    assert p.run()
+    assert impls == {AbstractFoo: MyFoo}
+    p.run()
 
 
-def test_pipeline_impl_missing():
+def test_pipeline_impl_missing(debug_manager_io_stream):
     with pytest.raises(ImplementationNotFoundError):
         p = Pipeline(None, [O2, Bar], dict())
         p.run()
-        assert False  # Should not be reached
+        assert False, "Exception should have already been raised"  # Should not be reached
 
 
-def test_too_many_impls():
-    class Foofoo(Operation):
+def test_multiple_implementations(debug_manager_io_stream):
+    class ExtraFoo(AbstractFoo):
         @classmethod
-        def implements(cls):
-            return FooImpl
-
-        @classmethod
-        def immediate_dependencies(cls):
-            return None
-
-        def run(self, scratch_space, dependency_outputs):
-            return True
-
-    with pytest.raises(TooManyImplementationsError):
-        p = Pipeline(None, [O2, MyFoo, Foofoo, Bar], dict())
-        p.run()
-        assert False  # Should not be reached
-
-
-def test_invalid_impl():
-    class BadImplOp(Operation):
-        @classmethod
-        def implements(cls):
-            return O1  # Implements an Op instead of Impl
+        def output_keys(cls):
+            return ["foo1", "foo2"]
 
         @classmethod
         def immediate_dependencies(cls):
             return None
 
         def run(self, scratch_space, dependency_outputs):
-            return True
+            return {"foo1": 123, "foo2": 456}
 
-    with pytest.raises(InvalidImplError):
-        Pipeline(None, [BadImplOp], dict()).run()
-        assert False
+    p = Pipeline(None, [O1, O2, MyFoo, ExtraFoo, Bar], dict())
+    ordering, impls = p.topo_sort()
+    assert len(impls) == 1
+    assert impls[AbstractFoo] is MyFoo
+    assert ExtraFoo in ordering  # ExtraFoo should still be in the graph to be executed.
+    # If run() mistakenly gives ExtraFoo's output to Bar, Bar.run will throw an AssertionError
+    p.run()
+
+
+def test_invalid_implementation(debug_manager_io_stream):
+    with pytest.raises(MissingParentOutputKey):
+        # Exception should be raised upon class declaration.
+        class BadImplementation(O1):
+            @classmethod
+            def output_keys(cls):
+                return ["bad"]
+
+            @classmethod
+            def immediate_dependencies(cls):
+                return None
+
+            def run(self, scratch_space, dependency_outputs):
+                return {"bad": True}
+
+    with pytest.raises(MissingParentOutputKey):
+        # Exception should be raised upon class declaration.
+        class BadImplementation(AbstractFoo):
+            @classmethod
+            def output_keys(cls):
+                return ["foo1"]
+
+            @classmethod
+            def immediate_dependencies(cls):
+                return None
+
+            def run(self, scratch_space, dependency_outputs):
+                return {"foo1": True}

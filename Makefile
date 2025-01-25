@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -54,6 +54,7 @@ launch_docker: build_docker
 		-v ${CURDIR}:/opt/mitten-develop \
 		--security-opt apparmor=unconfined \
 		--security-opt seccomp=unconfined \
+		--runtime=nvidia \
 		mitten:$(DOCKER_TAG) $(DOCKER_COMMAND)
 
 
@@ -79,8 +80,8 @@ install_test_deps:
 
 
 .PHONY: unit_tests
-unit_tests:
-	python3 -m pytest
+unit_tests: install_test_deps
+	python3 -m pytest $(TEST_FLAGS)
 
 
 .PHONY: pep8
@@ -88,7 +89,7 @@ pep8:
 	python3 -m pycodestyle --max-line-length=120 src/
 
 
-.PHONY:
+.PHONY: pylint
 pylint:
 	python3 -m pylint src/
 

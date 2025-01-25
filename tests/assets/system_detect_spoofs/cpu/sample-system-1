@@ -1,30 +1,143 @@
-Architecture:                    aarch64
-CPU op-mode(s):                  32-bit, 64-bit
-Byte Order:                      Little Endian
-CPU(s):                          80
-On-line CPU(s) list:             0-79
-Thread(s) per core:              1
-Core(s) per socket:              80
-Socket(s):                       1
-NUMA node(s):                    1
-Vendor ID:                       ARM
-Model:                           1
-Model name:                      Neoverse-N1
-Stepping:                        r3p1
-CPU max MHz:                     3000.0000
-CPU min MHz:                     1000.0000
-BogoMIPS:                        50.00
-L1d cache:                       5 MiB
-L1i cache:                       5 MiB
-L2 cache:                        80 MiB
-NUMA node0 CPU(s):               0-79
-Vulnerability Itlb multihit:     Not affected
-Vulnerability L1tf:              Not affected
-Vulnerability Mds:               Not affected
-Vulnerability Meltdown:          Not affected
-Vulnerability Spec store bypass: Mitigation; Speculative Store Bypass disabled via prctl
-Vulnerability Spectre v1:        Mitigation; __user pointer sanitization
-Vulnerability Spectre v2:        Not affected
-Vulnerability Srbds:             Not affected
-Vulnerability Tsx async abort:   Not affected
-Flags:                           fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm lrcpc dcpop asimddp ssbs
+{
+   "lscpu": [
+      {
+         "field": "Architecture:",
+         "data": "x86_64"
+      },{
+         "field": "CPU op-mode(s):",
+         "data": "32-bit, 64-bit"
+      },{
+         "field": "Address sizes:",
+         "data": "43 bits physical, 48 bits virtual"
+      },{
+         "field": "Byte Order:",
+         "data": "Little Endian"
+      },{
+         "field": "CPU(s):",
+         "data": "256"
+      },{
+         "field": "On-line CPU(s) list:",
+         "data": "0-255"
+      },{
+         "field": "Vendor ID:",
+         "data": "DefinitelyRealVendor"
+      },{
+         "field": "Model name:",
+         "data": "fake_cpu"
+      },{
+         "field": "CPU family:",
+         "data": "1337"
+      },{
+         "field": "Model:",
+         "data": "42"
+      },{
+         "field": "Thread(s) per core:",
+         "data": "2"
+      },{
+         "field": "Core(s) per socket:",
+         "data": "64"
+      },{
+         "field": "Socket(s):",
+         "data": "2"
+      },{
+         "field": "Stepping:",
+         "data": "0"
+      },{
+         "field": "Frequency boost:",
+         "data": "enabled"
+      },{
+         "field": "CPU max MHz:",
+         "data": "2250.0000"
+      },{
+         "field": "CPU min MHz:",
+         "data": "1500.0000"
+      },{
+         "field": "BogoMIPS:",
+         "data": "4500.11"
+      },{
+         "field": "Flags:",
+         "data": "fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb cat_l3 cdp_l3 hw_pstate ssbd mba ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 cqm rdt_a rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local clzero irperf xsaveerptr rdpru wbnoinvd amd_ppin arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold avic v_vmsave_vmload vgif v_spec_ctrl umip rdpid overflow_recov succor smca sme sev sev_es"
+      },{
+         "field": "Virtualization:",
+         "data": "verycoolhypervisor"
+      },{
+         "field": "L1d cache:",
+         "data": "4 MiB (128 instances)"
+      },{
+         "field": "L1i cache:",
+         "data": "4 MiB (128 instances)"
+      },{
+         "field": "L2 cache:",
+         "data": "64 MiB (128 instances)"
+      },{
+         "field": "L3 cache:",
+         "data": "512 MiB (32 instances)"
+      },{
+         "field": "NUMA node(s):",
+         "data": "8"
+      },{
+         "field": "NUMA node0 CPU(s):",
+         "data": "0-15,128-143"
+      },{
+         "field": "NUMA node1 CPU(s):",
+         "data": "16-31,144-159"
+      },{
+         "field": "NUMA node2 CPU(s):",
+         "data": "32-47,160-175"
+      },{
+         "field": "NUMA node3 CPU(s):",
+         "data": "48-63,176-191"
+      },{
+         "field": "NUMA node4 CPU(s):",
+         "data": "64-79,192-207"
+      },{
+         "field": "NUMA node5 CPU(s):",
+         "data": "80-95,208-223"
+      },{
+         "field": "NUMA node6 CPU(s):",
+         "data": "96-111,224-239"
+      },{
+         "field": "NUMA node7 CPU(s):",
+         "data": "112-127,240-255"
+      },{
+         "field": "Vulnerability Gather data sampling:",
+         "data": "Not affected"
+      },{
+         "field": "Vulnerability Itlb multihit:",
+         "data": "Not affected"
+      },{
+         "field": "Vulnerability L1tf:",
+         "data": "Not affected"
+      },{
+         "field": "Vulnerability Mds:",
+         "data": "Not affected"
+      },{
+         "field": "Vulnerability Meltdown:",
+         "data": "Not affected"
+      },{
+         "field": "Vulnerability Mmio stale data:",
+         "data": "Not affected"
+      },{
+         "field": "Vulnerability Retbleed:",
+         "data": "Vulnerable"
+      },{
+         "field": "Vulnerability Spec rstack overflow:",
+         "data": "Vulnerable"
+      },{
+         "field": "Vulnerability Spec store bypass:",
+         "data": "Mitigation; Speculative Store Bypass disabled via prctl"
+      },{
+         "field": "Vulnerability Spectre v1:",
+         "data": "Mitigation; usercopy/swapgs barriers and __user pointer sanitization"
+      },{
+         "field": "Vulnerability Spectre v2:",
+         "data": "Vulnerable, IBPB: disabled, STIBP: disabled, PBRSB-eIBRS: Not affected"
+      },{
+         "field": "Vulnerability Srbds:",
+         "data": "Not affected"
+      },{
+         "field": "Vulnerability Tsx async abort:",
+         "data": "Not affected"
+      }
+   ]
+}

@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 import os
 import platform
@@ -20,6 +19,7 @@ import re
 import subprocess
 import sys
 
+from git import RemoteProgress
 from glob import glob
 from typing import Any, Dict, Final, List, Optional, Set
 from tqdm import tqdm
@@ -98,3 +98,17 @@ def dict_eq(d1: Dict[str, Any], d2: Dict[str, Any], ignore_keys: Optional[Set[st
     """
     def filter_dict(d): return {k: v for k, v in d.items() if k not in ignore_keys}
     return filter_dict(d1) == filter_dict(d2)
+
+
+class GitPyTqdm(RemoteProgress):
+    """Utility wrapper around tqdm for use with GitPython operations.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__()
+        self.pbar = tqdm(*args, **kwargs)
+
+    def update(self, op_code, cur_count, max_count=None, message=''):
+        self.pbar.total = max_count
+        self.pbar.n = cur_count
+        self.pbar.refresh()

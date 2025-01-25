@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,21 +13,12 @@
 # limitations under the License.
 
 
-class InvalidImplError(TypeError):
-    def __init__(self, op, fake_impl):
-        super().__init__(f"Operation {op} implements {fake_impl}, which is not subclass of Impl.")
-
-
-class TooManyImplementationsError(RuntimeError):
-    def __init__(self, impl, ops):
-        super().__init__(f"{impl} has too many implementing Operations: {ops}")
+class MissingParentOutputKey(KeyError):
+    def __init__(self, cls, parent, keys):
+        msg = f"{cls} is missing output keys {keys}, which is required by parent {parent}"
+        super().__init__(msg)
 
 
 class ImplementationNotFoundError(RuntimeError):
     def __init__(self, op, impl):
-        super().__init__(f"{op} depends on Impl {impl} but no implementation was given.")
-
-
-class FailedOperationError(RuntimeError):
-    def __init__(self, op, output):
-        super().__init__(f"{op} failed with output {output}")
+        super().__init__(f"{op} depends on {impl} but no implementation was found.")

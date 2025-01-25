@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ from enum import Enum, unique
 import tensorrt as trt
 
 from ..aliased_name import AliasedName, AliasedNameEnum
+from ..json_utils import JSONable
 from ..mlcommons.inference.constants import AccuracyTarget, Benchmark
 
 
@@ -26,7 +27,7 @@ TRT_LOGGER: Final[trt.Logger] = trt.Logger(trt.Logger.INFO)
 
 
 @dataclass(frozen=True)
-class ComputeSM:
+class ComputeSM(JSONable):
     major: int
     minor: int
 
@@ -54,6 +55,13 @@ class ComputeSM:
         major = i // 10
         minor = i % 10
         return ComputeSM(major, minor)
+
+    def json_encode(self):
+        return int(self)
+
+    @classmethod
+    def from_json(cls, d):
+        return cls.from_int(d)
 
 
 @unique
@@ -119,7 +127,7 @@ class WorkloadSetting:
 
 G_DEFAULT_HARNESS_TYPES: Dict[Benchmark, HarnessType] = {
     Benchmark.BERT: HarnessType.Custom,
-    Benchmark.DLRMv2: HarnessType.Custom,
+    Benchmark.DLRM: HarnessType.Custom,
     Benchmark.RNNT: HarnessType.Custom,
     Benchmark.ResNet50: HarnessType.LWIS,
     Benchmark.Retinanet: HarnessType.LWIS,

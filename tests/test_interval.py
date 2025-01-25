@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,8 @@
 
 import pytest
 
-from nvmitten.interval import Interval
+from nvmitten.interval import Interval, NumericRange
+from nvmitten.json_utils import loads, dumps
 
 
 @pytest.mark.parametrize(
@@ -58,3 +59,16 @@ def test_interval_to_set(a, b, expected):
 )
 def test_interval_from_list(L, expected):
     assert Interval.build_interval_list(L) == expected
+
+@pytest.mark.parametrize(
+    "nr",
+    [
+        NumericRange(123.456, end=789),
+        NumericRange(123, rel_tol=0.03),
+        NumericRange(123, abs_tol=321),
+    ]
+)
+def test_numeric_range_json(nr):
+    s = dumps(nr)
+    new_nr = loads(s)
+    assert nr == new_nr

@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,11 +14,13 @@
 
 
 from __future__ import annotations
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from os import PathLike
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+import copy
 import numpy as np
 import onnx
 import onnx_graphsurgeon as gs
@@ -35,6 +37,9 @@ from ..utils import logging
 
 __doc__ = """This module contains NVIDIA implementations for MLPerf Inference Ops.
 """
+
+
+_PotentiallyMultiple_T = Union[str, Dict, List, Tuple]
 
 
 def get_dyn_ranges(cache_file: PathLike) -> Dict[str, np.uint32]:
@@ -114,7 +119,7 @@ class ONNXNetwork:
         self.graph = self.import_onnx(onnx_path)
 
         self.precision = precision
-        if precision == Precision.INT8:
+        if precision == Precision.INT8 and calib_cache_path:
             self.dyn_range_map = get_dyn_ranges(calib_cache_path)
         else:
             self.dyn_range_map = dict()
@@ -210,15 +215,31 @@ class ONNXNetwork:
         pass
 
 
-class TRTBuilder:
+class TRTOptProfiles:
+    """Wrapper around TRT IOptimizationProfile generators to only run once.
+    """
+    def __init__(self,
+                 func: Callable[[trt.INetworkDefinition, int], List[trt.IOptimizationProfile]]):
+        self.func = func
+        self.has_run = False
+        self.retval = None
+
+    def __call__(self, network: trt.INetworkDefinition, batch_size: int) -> List[trt.IOptimizationProfile]:
+        if not self.has_run:
+            self.retval = self.func(network, batch_size)
+            self.has_run = True
+        return copy.copy(self.retval)  # Return shallow copy so cache isn't accidentally modified.
+
+
+class TRTBuilder(ABC):
     """Sets up a TensorRT Builder. Used as a Mixin for an Operation.
     """
 
     def __init__(self,
                  *args,
                  precision: Precision = Precision.FP32,
-                 input_dtype: str = "fp32",
-                 input_format: str = "linear",
+                 input_dtype: _PotentiallyMultiple_T = "fp32",
+                 input_format: _PotentiallyMultiple_T = "linear",
                  workspace_size: int = 1 << 30,
                  num_profiles: int = 1,
                  # TODO: Rename this to verbose_trt for clarity. --verbose will need to forwarded in Fields API.
@@ -232,8 +253,21 @@ class TRTBuilder:
         super().__init__(*args, **kwargs)
 
         self.precision = precision
-        self.input_dtype = input_dtype
-        self.input_format = input_format
+
+        # Handle input_dtype and input_format.
+        assert type(input_dtype) is type(input_format), f"{self.__class__}.__init__: input_dtype and input_format " \
+                                                        f"must be the same type."
+        if isinstance(input_dtype, str):
+            self.input_dtype = [input_dtype]
+            self.input_format = [input_format]
+            self.num_inputs = 1
+        elif any(lambda _t: isinstance(input_dtype, _t), [tuple, list, dict]):
+            self.input_dtype = copy.copy(input_dtype)
+            self.input_format = copy.copy(input_format)
+            assert len(self.input_dtype) == len(self.input_format), f"{self.__class__}.__init__: input_dtype and " \
+                                                                    "input_format must be the same length."
+            self.num_inputs = len(self.input_dtype)
+
         self.workspace_size = workspace_size
         self.num_profiles = num_profiles
         self.verbose = verbose
@@ -246,9 +280,9 @@ class TRTBuilder:
         if self.dla_enabled:
             self.dla_core = int(dla_core)
             self.dla_sram = int(dla_sram)
-            self.create_profiles = self.dla_profiles
+            self.create_profiles = TRTOptProfiles(self.dla_profiles)
         else:
-            self.create_profiles = self.gpu_profiles
+            self.create_profiles = TRTOptProfiles(self.gpu_profiles)
 
         trt.init_libnvinfer_plugins(self.logger, "")
         self.builder = trt.Builder(self.logger)
@@ -256,6 +290,7 @@ class TRTBuilder:
     def create_builder_config(self,
                               builder: trt.Builder = None,
                               workspace_size: Optional[int] = None,
+                              profiles: Optional[List[trt.IOptimizationProfile]] = None,
                               precision: Optional[Precision] = None,
                               dla_core: Optional[int] = None,
                               dla_sram: Optional[int] = None,
@@ -267,6 +302,7 @@ class TRTBuilder:
         Args:
             builder (trt.Builder): trt.Builder to create a config from.
             workspace_size (int): The size of the TensorRT workspace to create. (Default: None)
+            profiles (List[trt.IOptimizationProfile]): List of optimization profiles to use. (Default: None)
             precision (Precision): The precision setting for the builder config. (Default: None)
             dla_core (int): The DLA core ID to use for the builder. If None, assumes DLA is not used, and no DLA
                             settings will be set. Otherwise, sets the default device to the specified DLA. (Default:
@@ -294,7 +330,7 @@ class TRTBuilder:
 
         # Create builder
         builder_config = builder.create_builder_config()
-        builder_config.max_workspace_size = workspace_size
+        builder_config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace_size)
         if verbose:
             builder_config.profiling_verbosity = trt.ProfilingVerbosity.DETAILED
 
@@ -311,53 +347,72 @@ class TRTBuilder:
             builder_config.default_device_type = trt.DeviceType.DLA
             builder_config.DLA_core = int(dla_core)
 
-            # Currently with the TRT version in v3.0, TRT uses a 0.5MB DLA SRAM size by default, which is suboptimal. Set
-            # the SRAM size to 1 MB.
+            # Currently with the TRT version in v3.0, TRT uses a 0.5MB DLA SRAM size by default,
+            # which is suboptimal. Set the SRAM size to 1 MB.
             builder_config.set_memory_pool_limit(trt.MemoryPoolType.DLA_MANAGED_SRAM, dla_sram)
+
+        # Set profiles if provided
+        if profiles:
+            for prof in profiles:
+                builder_config.add_optimization_profile(prof)
         return builder_config
+
+    @abstractmethod
+    def create_network(self, builder: trt.Builder = None, flags: int = 0) -> trt.INetworkDefinition:
+        if builder is None:
+            builder = self.builder
+        network = builder.create_network(flags)
+        return network
 
     def build_engine(self,
                      network: trt.INetworkDefinition,
                      builder_config: trt.IBuilderConfig,
-                     batch_size: int,
-                     save_to: PathLike):
+                     save_to: PathLike) -> trt.IHostMemory:
+        # Build engines
+        serialized_network = self.builder.build_serialized_network(network, builder_config)
+
+        logging.debug("Saving engine")
+        with save_to.open(mode='wb') as f:
+            f.write(serialized_network)
+
+        return serialized_network
+
+    def __call__(self,
+                 batch_size: int,
+                 save_to: PathLike,
+                 network: Optional[trt.INetworkDefinition] = None,
+                 profiles: Optional[List[trt.IOptimizationProfile]] = None,
+                 builder_config: Optional[trt.IBuilderConfig] = None) -> trt.IHostMemory:
+        if network is None:
+            network = self.create_network()
+
+        if profiles is None:
+            if network.has_implicit_batch_dimension:
+                logging.info(f"Network uses implicit batch size. Setting max_batch_size to {batch_size}.")
+                self.builder.max_batch_size = batch_size
+                profiles = list()
+            else:
+                logging.info(f"Building optimization profiles.")
+                profiles = self.create_profiles(network, batch_size)
+
+        if builder_config is None:
+            builder_config = self.create_builder_config(profiles=profiles)
+
         save_to = Path(save_to)
         if save_to.is_file():
             logging.warning(f"{save_to} already exists. This file will be overwritten")
         save_to.parent.mkdir(parents=True, exist_ok=True)
 
         logging.info(f"Building engine to {save_to}")
+        return self.build_engine(network, builder_config, save_to)
 
-        if network.has_implicit_batch_dimension:
-            logging.info(f"Network uses implicit batch size. Setting max_batch_size to {batch_size}.")
-            self.builder.max_batch_size = batch_size
-        else:
-            logging.info(f"Building optimization profiles.")
-            self.create_profiles(network, builder_config, batch_size)
-
-        # Build engines
-        engine = self.builder.build_engine(network, builder_config)
-        engine_inspector = engine.create_engine_inspector()
-        layer_info = engine_inspector.get_engine_information(trt.LayerInformationFormat.ONELINE)
-        logging.info("========= TensorRT Engine Layer Information =========")
-        logging.info(layer_info)
-
-        # [https://nvbugs/3965323] Need to delete the engine inspector to release the refcount
-        del engine_inspector
-
-        logging.debug("Serializing and saving engine")
-        buf = engine.serialize()
-        with save_to.open(mode='wb') as f:
-            f.write(buf)
-
-    def gpu_profiles(self, network: trt.INetworkDefinition, builder_config: trt.IBuilderConfig, batch_size: int):
-        if not hasattr(self, "profiles"):
-            self.profiles = []
+    def gpu_profiles(self, network: trt.INetworkDefinition, batch_size: int):
+        profiles = []
 
         for i in range(self.num_profiles):
-            if i < len(self.profiles):
+            if i < len(profiles):
                 logging.info(f"Reusing profile: {i}")
-                profile = self.profiles[i]
+                profile = profiles[i]
             else:
                 profile = self.builder.create_optimization_profile()
 
@@ -374,16 +429,19 @@ class TRTBuilder:
             if not profile:
                 raise RuntimeError("Invalid optimization profile!")
 
-            if i >= len(self.profiles):
-                builder_config.add_optimization_profile(profile)
-                self.profiles.append(profile)
+            if i >= len(profiles):
+                profiles.append(profile)
+        return profiles
 
-    def dla_profiles(self, network: trt.INetworkDefinition, builder_config: trt.IBuilderConfig, batch_size: int):
+    def dla_profiles(self, network: trt.INetworkDefinition, batch_size: int):
         # Use fixed batch size for DLA
         for input_idx in range(network.num_inputs):
             input_shape = network.get_input(input_idx).shape
             input_shape[0] = batch_size
             network.get_input(input_idx).shape = input_shape
+
+        # Signal that we don't want to call IBuilderConfig.add_optimization_profile.
+        return []
 
 
 class CalibratableTensorRTEngine:
@@ -416,12 +474,11 @@ class CalibratableTensorRTEngine:
         # Implementation must implement a trt.IInt8Calibrator and return an instance of it in this method.
         return None
 
-    def calibration_profiles(self, network: trt.INetworkDefinition, builder_config: trt.IBuilderConfig, batch_size: int):
+    def calibration_profiles(self, network: trt.INetworkDefinition, batch_size: int):
         for input_idx in range(network.num_inputs):
             input_shape = network.get_input(input_idx).shape
             input_shape[0] = self.calib_batch_size
             network.get_input(input_idx).shape = input_shape
-
 
 
 class MLPerfInferenceEngine:
@@ -446,7 +503,7 @@ class MLPerfInferenceEngine:
         self.scenario = scenario
 
     def engine_dir(self, scratch_space: ScratchSpace) -> Path:
-        system_id = self.system.get_id()
+        system_id = self.system.extras["id"]
         name = self.benchmark.valstr()
         scenario = self.scenario.valstr()
         return scratch_space.path / "engines" / system_id / name / scenario
@@ -456,7 +513,7 @@ class MLPerfInferenceEngine:
                     batch_size: int,
                     precision: str,
                     subnetwork_name: str = None,
-                    tag: str =  "default") -> str:
+                    tag: str = "default") -> str:
         """Gets the name of the engine, constructed from the device it is build for, the explicit batch size, and an
         optional tag.
 
@@ -472,8 +529,8 @@ class MLPerfInferenceEngine:
         """
         if not precision:
             if hasattr(self, "precision"):
-                # TODO: self.precision is currently a string, but in the case it is an AliasedNameEnum member, add support
-                # to use .valstr()
+                # TODO: self.precision is currently a string, but in the case it is an AliasedNameEnum member,
+                # add support to use .valstr()
                 precision = self.precision
             else:
                 raise ValueError("precision cannot be None if self.precision is not set.")
@@ -511,6 +568,7 @@ class LegacyBuilder:
         # Do not run the full Mitten pipeline yet. Invoke run manually.
         self.mitten_builder.run(self.legacy_scratch, None)
 
+    # TODO: this function is deprecated and should be removed as the body of it has been moved to MLPerf code base
     def calibrate(self):
         # Do nothing if the builder isn't a CalibratableTensorRTEngine.
         if not isinstance(self.mitten_builder, CalibratableTensorRTEngine):
@@ -519,6 +577,7 @@ class LegacyBuilder:
             return
 
         old_fields = dict()
+
         def _cache_and_set(attr, val):
             old_fields[attr] = getattr(self.mitten_builder, attr)
             setattr(self.mitten_builder, attr, val)

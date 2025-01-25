@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,16 +14,19 @@
 
 from __future__ import annotations
 from dataclasses import dataclass, asdict, field
+from functools import total_ordering
 from typing import Any, Dict, Final, Optional, Union, Tuple
 
 import re
 import math
 
 from .constants import QUANTITY_UNIT_FORMAT, ByteSuffix
+from .json_utils import JSONable
 
 
+@total_ordering
 @dataclass(eq=True, frozen=True)
-class Memory:
+class Memory(JSONable):
     """Represents an amount of computer memory."""
 
     quantity: float
@@ -75,10 +78,45 @@ class Memory:
         (i.e. from MB to GB), maintaining the same number of bytes."""
         return Memory._to_base(byte_suffix, self._num_bytes)
 
-    def __eq__(self, o):
+    def __eq__(self, o: Any) -> bool:
         if o.__class__ is not Memory:
             return NotImplemented
         return self._num_bytes == o._num_bytes
+
+    def __lt__(self, o: Any) -> bool:
+        if o.__class__ is not Memory:
+            return NotImplemented
+        return self._num_bytes < o._num_bytes
+
+    def __add__(self, o: Any) -> Memory:
+        if isinstance(o, Memory):
+            offset = o._num_bytes
+        else:
+            offset = self.byte_suffix.to_bytes() * o
+
+        base = self.byte_suffix.value[0]
+        return Memory._to_base(base, self._num_bytes + offset)
+
+    def __sub__(self, o: Any) -> Memory:
+        if isinstance(o, Memory):
+            offset = o._num_bytes
+        else:
+            offset = self.byte_suffix.to_bytes() * o
+
+        base = self.byte_suffix.value[0]
+        return Memory._to_base(base, self._num_bytes - offset)
+
+    def __mul__(self, o: Any) -> Memory:
+        if isinstance(o, Memory):
+            raise TypeError("Multiplying 2 Memory objects is ambiguous. Only float scale factors are supported.")
+        base = self.byte_suffix.value[0]
+        return Memory._to_base(base, self._num_bytes * o)
+
+    def __truediv__(self, o: Any) -> Memory:
+        if isinstance(o, Memory):
+            raise TypeError("Dividing 2 Memory objects is ambiguous. Only float scale factors are supported.")
+        base = self.byte_suffix.value[0]
+        return Memory._to_base(base, self._num_bytes / o)
 
     @classmethod
     def _to_base(cls, base, n):
@@ -113,3 +151,12 @@ class Memory:
             str: 'Pretty-print' string representation of the Memory
         """
         return f"{self.quantity:.2f} {self.byte_suffix.name}"
+
+    def json_encode(self):
+        return {"num_bytes": self._num_bytes,
+                "base": self.byte_suffix.value[0],
+                "human_readable_UNUSED": self.pretty_string()}
+
+    @classmethod
+    def from_json(cls, d):
+        return Memory._to_base(d["base"], d["num_bytes"])
