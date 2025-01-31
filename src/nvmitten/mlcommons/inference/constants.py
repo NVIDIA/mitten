@@ -105,7 +105,7 @@ class AccuracyTarget(Enum):
 
 G_HIGH_ACC_ENABLED_BENCHMARKS: Tuple[Benchmark, ...] = (
     Benchmark.BERT,
-    Benchmark.DLRM,
+    Benchmark.DLRMv2,
     Benchmark.UNET3D,
 )
 """Tuple[Benchmark, ...]: [DEPRECATED] Benchmarks that have 99.9% accuracy targets"""
@@ -113,8 +113,7 @@ G_HIGH_ACC_ENABLED_BENCHMARKS: Tuple[Benchmark, ...] = (
 
 G_DATACENTER_BENCHMARKS: Tuple[Benchmark, ...] = (
     Benchmark.BERT,
-    Benchmark.DLRM,
-    Benchmark.RNNT,
+    Benchmark.DLRMv2,
     Benchmark.ResNet50,
     Benchmark.Retinanet,
     Benchmark.UNET3D,
@@ -124,7 +123,6 @@ G_DATACENTER_BENCHMARKS: Tuple[Benchmark, ...] = (
 
 G_EDGE_BENCHMARKS: Tuple[Benchmark, ...] = (
     Benchmark.BERT,
-    Benchmark.RNNT,
     Benchmark.ResNet50,
     Benchmark.Retinanet,
     Benchmark.UNET3D,

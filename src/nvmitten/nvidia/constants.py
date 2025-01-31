@@ -127,8 +127,7 @@ class WorkloadSetting:
 
 G_DEFAULT_HARNESS_TYPES: Dict[Benchmark, HarnessType] = {
     Benchmark.BERT: HarnessType.Custom,
-    Benchmark.DLRM: HarnessType.Custom,
-    Benchmark.RNNT: HarnessType.Custom,
+    Benchmark.DLRMv2: HarnessType.Custom,
     Benchmark.ResNet50: HarnessType.LWIS,
     Benchmark.Retinanet: HarnessType.LWIS,
     Benchmark.UNET3D: HarnessType.Custom,
