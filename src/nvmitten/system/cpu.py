@@ -59,7 +59,7 @@ class CPU(Component):
         _t = Tree("lscpu", None)
 
         def process_field(d, parents=None):
-            field = d["field"].strip(": ")
+            field = d["field"].rstrip(' ').rstrip(':').lower()
             data = d["data"]
 
             if parents is None:
@@ -76,81 +76,112 @@ class CPU(Component):
             process_field(d)
 
         # In older versions, "Model name" will be a top level key. In newer versions it under "Vendor ID"
-        is_old_lscpu = (len(_t["Vendor ID"].children) == 0)
+        is_old_lscpu = (len(_t["vendor id"].children) == 0)
         if is_old_lscpu:
             try:
-                name = _t["Model name"].value
+                name = _t["model name"].value
             except KeyError:
                 name = "Unnamed CPU"
 
-            architecture = CPUArchitecture(_t["Architecture"].value)
-            vendor = _t["Vendor ID"].value
+            architecture = CPUArchitecture(_t["architecture"].value)
+            vendor = _t["vendor id"].value
 
             # Sockets vs. Clusters. lscpu will group cpu core info in either sockets or clusters.
             try:
                 group_type = GroupType.Socket
-                n_groups = int(_t["Socket(s)"].value)
-                cores_per_group = int(_t["Core(s) per socket"].value)
+                n_groups = int(_t["socket(s)"].value)
+                cores_per_group = int(_t["core(s) per socket"].value)
             except (ValueError, KeyError):
                 group_type = GroupType.Cluster
-                n_groups = int(_t["Cluster(s)"].value)
-                cores_per_group = int(_t["Core(s) per cluster"].value)
+                n_groups = int(_t["cluster(s)"].value)
+                cores_per_group = int(_t["core(s) per cluster"].value)
 
-            threads_per_core = int(_t["Thread(s) per core"].value)
+            threads_per_core = int(_t["thread(s) per core"].value)
 
             numa_nodes = []
-            if "NUMA node(s)" in _t.children:
-                n_numa_nodes = int(_t["NUMA node(s)"].value)
-                for i in range(n_numa_nodes):
-                    k = f"NUMA node{i} CPU(s)"
-                    if _t[k].value:
-                        numa_nodes.append(Interval.interval_list_from_str(_t[k].value))
+            if "numa node(s)" in _t.children:
+                n_numa_nodes = int(_t["numa node(s)"].value)
+                _valid = 0
+                i = 0
+                while _valid < n_numa_nodes:
+                    if i >= 256:
+                        raise RuntimeError("Impossible state reached while parsing NUMA info")
+
+                    k = f"numa node{i} cpu(s)"
+                    i += 1
+                    if k in _t.children:
+                        _valid += 1
+                        if _t[k].value:
+                            numa_nodes.append(Interval.interval_list_from_str(_t[k].value))
+                        else:
+                            numa_nodes.append(list())
                     else:
-                        numa_nodes.append(list())
-            flags = set(_t["Flags"].value.split(" "))
+                        numa_nodes.append(None)
+            flags = set(_t["flags"].value.split(" "))
 
             vulns = dict()
             for child in _t.get_children():
-                if child.name.startswith("Vulnerability "):
+                if child.name.startswith("vulnerability "):
                     if child.value == "Not affected":
                         continue
-                    vulns[child.name[len("Vulnerability "):]] = child.value
+                    vulns[child.name[len("vulnerability "):]] = child.value
         else:
             try:
-                name = _t["Vendor ID", "Model Name"].value
+                name = _t["vendor id", "model name"].value
             except KeyError:
                 name = "Unnamed CPU"
 
-            architecture = CPUArchitecture(_t["Architecture"].value)
-            vendor = _t["Vendor ID"].value
-            try:
-                group_type = GroupType.Socket
-                n_groups = int(_t["Vendor ID", "Socket(s)"].value)
-                cores_per_group = int(_t["Vendor ID", "Core(s) per socket"].value)
-            except (ValueError, KeyError):
-                group_type = GroupType.Cluster
-                n_groups = int(_t["Vendor ID", "Cluster(s)"].value)
-                cores_per_group = int(_t["Vendor ID", "Core(s) per cluster"].value)
+            architecture = CPUArchitecture(_t["architecture"].value)
+            vendor = _t["vendor id"].value
+            if "socket(s)" in _t["vendor id"].children or "cluster(s)" in _t["vendor id"].children:
+                try:
+                    group_type = GroupType.Socket
+                    n_groups = int(_t["vendor id", "socket(s)"].value)
+                    cores_per_group = int(_t["vendor id", "core(s) per socket"].value)
+                except (ValueError, KeyError):
+                    group_type = GroupType.Cluster
+                    n_groups = int(_t["vendor id", "cluster(s)"].value)
+                    cores_per_group = int(_t["vendor id", "core(s) per cluster"].value)
+                threads_per_core = int(_t["vendor id", "thread(s) per core"].value)
+                flags = set(_t["vendor id", "flags"].value.split(" "))
+            else:
+                try:
+                    group_type = GroupType.Socket
+                    n_groups = int(_t["vendor id", "model name", "socket(s)"].value)
+                    cores_per_group = int(_t["vendor id", "model name", "core(s) per socket"].value)
+                except (ValueError, KeyError):
+                    group_type = GroupType.Cluster
+                    n_groups = int(_t["vendor id", "model name", "cluster(s)"].value)
+                    cores_per_group = int(_t["vendor id", "model name", "core(s) per cluster"].value)
+                threads_per_core = int(_t["vendor id", "model name", "thread(s) per core"].value)
+                flags = set(_t["vendor id", "model name", "flags"].value.split(" "))
 
-            threads_per_core = int(_t["Vendor ID", "Thread(s) per core"].value)
 
             numa_nodes = []
-            if "NUMA" in _t.children:
-                for i in range(int(_t["NUMA", "NUMA node(s)"].value)):
-                    k = f"NUMA node{i} CPU(s)"
-                    if _t[k].value:
-                        numa_nodes.append(Interval.interval_list_from_str(_t["NUMA", k].value))
+            if "numa" in _t.children:
+                n_numa_nodes = int(_t["numa", "numa node(s)"].value)
+                i = 0
+                _valid = 0
+                while _valid < n_numa_nodes:
+                    if i >= 256:
+                        raise RuntimeError("Impossible state reached while parsing NUMA info")
+                    k = f"numa node{i} cpu(s)"
+                    i += 1
+                    if k in _t["numa"].children:
+                        _valid += 1
+                        if _t["numa", k].value:
+                            numa_nodes.append(Interval.interval_list_from_str(_t["numa", k].value))
+                        else:
+                            numa_nodes.append(list())
                     else:
-                        numa_nodes.append(list())
-
-            flags = set(_t["Vendor ID", "Flags"].value.split(" "))
+                        numa_nodes.append(None)
 
             vulns = dict()
-            if "Vulnerabilities" in _t.children:
-                for vuln in _t["Vulnerabilities"].get_children():
+            if "vulnerabilities" in _t.children:
+                for vuln in _t["vulnerabilities"].get_children():
                     if vuln.value == "Not affected":
                         continue
-                    vulns[vuln.name] = vuln.data
+                    vulns[vuln.name] = vuln.value
 
         return [CPU(name,
                     architecture,

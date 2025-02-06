@@ -26,6 +26,7 @@ def test_cpu_detect(mock_run):
 
     mock_run.return_value = contents
 
+    CPU.detect.cache_clear()
     cpu = CPU.detect()[0]
     mock_run.assert_called_once_with("lscpu -J", get_output=True, tee=False, verbose=False)
     assert cpu.name == "fake_cpu"
@@ -39,3 +40,26 @@ def test_cpu_detect(mock_run):
     for i in range(8):
         assert cpu.numa_nodes[i] == [Interval(i * 16, (i + 1) * 16 - 1),
                                      Interval(i * 16 + 128, (i + 1) * 16 + 127)]
+
+
+@patch("nvmitten.system.cpu.run_command")
+def test_cpu_detect_missing_numa_node(mock_run):
+    with Path("tests/assets/system_detect_spoofs/cpu/sample-system-2").open() as f:
+        contents = f.read().split("\n")
+
+    mock_run.return_value = contents
+
+    CPU.detect.cache_clear()
+    cpu = CPU.detect()[0]
+    mock_run.assert_called_once_with("lscpu -J", get_output=True, tee=False, verbose=False)
+    assert cpu.name == "Neoverse-V2"
+    assert cpu.architecture == CPUArchitecture.aarch64
+    assert cpu.vendor == "ARM"
+    assert len(cpu.numa_nodes) == 18  # node2 and node10 are missing
+    assert cpu.numa_nodes[2] is None
+    assert cpu.numa_nodes[10] is None
+    for idx in [3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14, 15, 16, 17]:
+        assert cpu.numa_nodes[idx] == list()
+
+    assert cpu.numa_nodes[0] == [Interval(0, 71)]
+    assert cpu.numa_nodes[1] == [Interval(72, 143)]

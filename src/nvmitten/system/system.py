@@ -59,6 +59,9 @@ class System(Component):
 
         config = list()
         for i, intervals in enumerate(self.cpu.numa_nodes):
+            if intervals is None:
+                continue
+
             cpu_set = set()
             for interval in intervals:
                 cpu_set = cpu_set.union(interval.to_set())
