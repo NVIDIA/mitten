@@ -100,7 +100,7 @@ def test_memory_mul(mem, o, expected, raised):
 
 def test_memory_json():
     # Generate some random memory object
-    num_bytes = random.randint(1, 1e12)
+    num_bytes = random.randint(1, int(1e12))
     m_1000 = Memory.to_1000_base(num_bytes)
 
     s = dumps(m_1000)

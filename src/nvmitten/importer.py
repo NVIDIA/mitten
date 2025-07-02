@@ -35,7 +35,7 @@ class ScopedImporter:
 
     def __enter__(self):
         self.old_sys_path = sys.path[:]
-        sys.path = self.import_path[:]
+        sys.path = [str(p) for p in self.import_path]
         return self
 
     def __exit__(self, type, value, traceback):

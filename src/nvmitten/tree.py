@@ -12,13 +12,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Tree data structure implementation for hierarchical data organization.
+
+This module provides a generic tree implementation that supports:
+- Arbitrary number of children per node
+- Multiple traversal methods (InOrder, PreOrder, PostOrder, OnlyLeaves)
+- Dictionary-like access to nodes
+- Tree construction from dictionaries
+- Node insertion and deletion
+- Path-based node access
+"""
+
 from __future__ import annotations
 from enum import Enum, unique, auto
 from typing import Any, Callable, Dict, List, Iterable, Iterator, Optional, Union
 
+import math
+
 
 @unique
 class Traversal(Enum):
+    """Enumeration of tree traversal methods.
+
+    Attributes:
+        InOrder: Visit left subtree, then root, then right subtree (valid only for binary trees)
+        PreOrder: Visit root, then children from left to right
+        PostOrder: Visit children from left to right, then root
+        OnlyLeaves: Visit only leaf nodes in pre-order
+    """
     InOrder = auto()
     PreOrder = auto()
     PostOrder = auto()
@@ -26,18 +47,26 @@ class Traversal(Enum):
 
 
 class Tree:
-    """Generic Tree implementation. Each node can have any number of children, of any type.
+    """Generic Tree implementation for hierarchical data organization.
+
+    This class provides a flexible tree structure where:
+    - Each node can have any number of children
+    - Children are stored in a dictionary keyed by their names
+    - Nodes can store arbitrary values
+    - Supports multiple traversal methods
+    - Provides dictionary-like access to nodes
     """
 
     def __init__(self, name: str, value: Any, children: Optional[Iterable[Tree]] = None):
         """Creates a Tree node.
 
         Args:
-            name (str): ID used to query for this node. Names must be unique among other immediate child nodes of the
-                        same parent node.
-            value (Any): The value to store for the node.
-            children (Iterable[Tree]): If set, initializes this nodes children to this. Otherwise, initialized with no
-                                       child nodes. (Default: None)
+            name: Unique identifier for this node among its siblings
+            value: Arbitrary value to store in this node
+            children: Optional initial set of child nodes
+
+        Raises:
+            ValueError: If a child node has a duplicate name
         """
         self.name = name
         self.value = value
@@ -46,42 +75,93 @@ class Tree:
             for child in children:
                 self.add_child(child)
 
+    @classmethod
+    def from_dict(cls, d: Dict, name: str, max_depth: int = math.inf) -> Tree:
+        """Creates a tree from a nested dictionary structure.
+
+        Args:
+            d: Dictionary to convert to a tree
+            name: Name for the root node
+            max_depth: Maximum depth to convert (default: infinite)
+
+        Returns:
+            Tree: Root node of the constructed tree
+
+        Raises:
+            AssertionError: If max_depth is less than 1
+        """
+        root = cls(name, None)
+
+        assert max_depth >= 1, "Max nested depth must be at least 1"
+
+        for k, v in d.items():
+            if isinstance(v, dict) and max_depth > 1:
+                _subdepth = max_depth - 1
+                root.add_child(cls.from_dict(v, k, max_depth=_subdepth))
+            else:
+                root[k] = v
+
+        return root
+
     def __repr__(self) -> str:
+        """Returns a string representation of the node.
+
+        Returns:
+            str: String in format "Tree(name=name, value=value)"
+        """
         return f"{self.__class__.__name__}(name={self.name}, value={self.value})"
 
     def __str__(self) -> str:
+        """Returns a simplified string representation of the node.
+
+        Returns:
+            str: String in format "(name: value)"
+        """
         return f"({self.name}: {self.value})"
 
     def __hash__(self) -> int:
-        return hash(self.name) + 17 * hash(self.value)
+        """Returns a hash of the node based on its id.
 
-    def get_children(self) -> List[Tree]:
-        """Returns a list of immediate child nodes of the tree.
+        This is used to track visited nodes during traversal.
 
         Returns:
-            List[Tree]: A list of child nodes
+            int: Hash value based on node's id
+        """
+        return id(self)
+
+    def get_children(self) -> List[Tree]:
+        """Returns a list of immediate child nodes.
+
+        Returns:
+            List[Tree]: List of child nodes
         """
         return list(self.children.values())
 
-    def traversal(self, order=Traversal.PreOrder) -> Iterator[Tree]:
-        """Returns a generator of *all* nodes in the tree using this node as the root node.
+    def traversal(self, order: Traversal = Traversal.PreOrder, include_keys: bool = False) -> Iterator[Tree]:
+        """Returns an iterator over all nodes in the tree.
 
         Args:
-            order (Traversal): The order to traverse the tree in. Note that InOrder traversal can only be used if the
-                               Tree is a Binary tree, since it is not well-defined in other cases. (Default:
-                               Traversal.PreOrder)
+            order: Traversal order (default: PreOrder)
+            include_keys: Whether to include node paths in the output
 
         Returns:
-            Iterator[Tree]: An Iterator that traverses the tree in the specified order.
+            Iterator[Tree]: Iterator over nodes in specified order
 
         Raises:
-            ValueError: If an invalid traversal method is given
+            ValueError: If InOrder traversal is used on a non-binary tree
+            ValueError: If a cycle is detected in the tree
         """
         bag = list()
         _get_next = bag.pop
         seen = set()
 
-        def _recurse(node):
+        def _add(stop, node, keyspace):
+            if include_keys:
+                bag.append((stop, node, keyspace))
+            else:
+                bag.append((stop, node))
+
+        def _recurse(node, keyspace):
             if node in seen:
                 raise ValueError(f"Non-tree structure detected - {node} occurs multiple times")
             seen.add(node)
@@ -91,76 +171,83 @@ class Tree:
                                  "children.")
 
             if order is Traversal.PostOrder:
-                bag.append((node,))  # tuple marks recursion base-case, since a Tree of Trees is possible.
+                _add(True, node, keyspace)
 
             if order is Traversal.InOrder:
                 children = node.get_children()
                 if len(children) == 2:  # Right node first
-                    bag.append(children[1])
-                bag.append((node,))
+                    _add(False, children[1], [*keyspace, children[1].name])
+
+                _add(True, node, keyspace)
+
                 if len(children) >= 1:  # Left node
-                    bag.append(children[0])
+                    _add(False, children[0], [*keyspace, children[0].name])
             else:
-                # bag.extend(node.children[::-1]) runs through the list twice and is inefficient
-                for _, child in reversed(node.children.items()):  # reversed() since bag is a stack
-                    bag.append(child)
+                for _, child in reversed(node.children.items()):
+                    _add(False, child, [*keyspace, child.name])
 
             if order is Traversal.PreOrder:
-                bag.append((node,))
+                _add(True, node, keyspace)
 
-            # Only-Leaf traveral is a pre-order traversal, but only leaves are inserted
             if order is Traversal.OnlyLeaves and len(node.children) == 0:
-                bag.append((node,))
+                _add(True, node, keyspace)
 
-        _recurse(self)
+        _recurse(self, list())
         while len(bag) > 0:
-            curr = _get_next()
-            if isinstance(curr, tuple):
-                yield curr[0]
+            if include_keys:
+                stop, curr, keyspace = _get_next()
             else:
-                _recurse(curr)
+                stop, curr = _get_next()
 
-    def as_list(self, order=Traversal.PreOrder) -> List[Tree]:
-        """Returns a list of *all* nodes in the tree using this node as the root node.
+            if stop:
+                if include_keys:
+                    yield curr, keyspace
+                else:
+                    yield curr
+            else:
+                _recurse(curr, keyspace if include_keys else list())
+
+    def as_list(self, order: Traversal = Traversal.PreOrder) -> List[Tree]:
+        """Returns a list of all nodes in the tree.
 
         Args:
-            order (Traversal): The order to traverse the tree in. Note that InOrder traversal can only be used if the
-                               Tree is a Binary tree, since it is not well-defined in other cases. (Default:
-                               Traversal.PreOrder)
+            order: Traversal order (default: PreOrder)
 
         Returns:
-            List[Tree]: A list of nodes in the tree in the specified order
+            List[Tree]: List of nodes in specified order
         """
         return list(self.traversal(order=order))
 
     def num_leaves(self) -> int:
-        """Returns the number of leaf nodes in this tree.
+        """Returns the number of leaf nodes in the tree.
 
         Returns:
-            int: The number of leaf nodes
+            int: Number of leaf nodes
         """
         return len(self.as_list(order=Traversal.OnlyLeaves))
 
     def has_walk(self, keyspace: Iterable[str]) -> bool:
-        """Checks if a given walk is valid starting from this node.
+        """Checks if a path exists in the tree.
 
-        Ex. Given the tree below:
-            A
-            |- B
-            |  |- C
-            |  |_ D
-            |     |_ E
-            |- F
-            |  |_ G
-            |_ H
+        Example:
+            Given tree:
+                A
+                |- B
+                |  |- C
+                |  |_ D
+                |     |_ E
+                |- F
+                |  |_ G
+                |_ H
 
-        A.has_walk(["B", "D", "E"]) is True, but A.has_walk(["F", "H"]) is False.
+            A.has_walk(["B", "D", "E"]) returns True
+            A.has_walk(["F", "H"]) returns False
 
         Args:
-            keyspace (Iterable[str]): The walk to check
+            keyspace: Sequence of node names representing the path
 
         Returns:
-            bool: Whether or not the walk exists from this node
+            bool: True if the path exists, False otherwise
         """
         curr = self
         for key in keyspace:
@@ -170,14 +257,14 @@ class Tree:
         return True
 
     def add_child(self, child_node: Tree):
-        """Adds a node as a child to this node. The child_node cannot share a name with an existing child of this node.
-        The child node must be a subclass of this node.
+        """Adds a child node to this node.
 
         Args:
-            child_node (Tree): The node to add as a child
+            child_node: Node to add as a child
 
         Raises:
-            ValueError: If the name of `child_node` already exists in `self`.
+            AssertionError: If child_node is not a subclass of this node's class
+            ValueError: If a child with the same name already exists
         """
         assert isinstance(child_node, self.__class__), f"Cannot add child node {child_node.__class__.__name__}. "\
                                                        f"Must be subclass of {self.__class__.__name__}"
@@ -191,23 +278,20 @@ class Tree:
                      keyspace: Optional[Iterable[str]] = None,
                      create_parents: bool = True,
                      default_parent_value: Any = None) -> Tree:
-        """Inserts a value into this node. The created child node will be the same class as its immediate parent.
+        """Inserts a value into the tree at the specified location.
 
         Args:
-            name (str): The name of the node to be created
-            value (Any): The value to insert
-            keyspace (Iterable[str]): If specified, instead inserts the value in the node at the end of the walk
-                                      starting from `self` represented by the names of the nodes given in
-                                      `keyspace`. (Default: None)
-            create_parents (bool): If True, will create any necessary parent nodes for the walk for the given keyspace
-                                   using the `default_parent_value`.
-            default_parent_value (Any): Default value for parent nodes.
+            name: Name of the new node
+            value: Value to store in the new node
+            keyspace: Path to the parent node (default: None for root)
+            create_parents: Whether to create missing parent nodes
+            default_parent_value: Value to use for created parent nodes
 
         Returns:
-            Tree: The Tree that was created
+            Tree: The newly created node
 
         Raises:
-            KeyError: If the walk specified by `keyspace` is an invalid walk of the Tree
+            KeyError: If keyspace is invalid and create_parents is False
         """
         curr = self
         if keyspace:
@@ -220,16 +304,16 @@ class Tree:
         return new_node
 
     def get(self, keyspace: Iterable[str]) -> Any:
-        """Gets a value of the node in the tree given a keyspace that represents the names of nodes in a walk of the
-        tree.
-
-        If the walk is invalid, raises an error.
+        """Retrieves a value from the tree.
 
         Args:
-            keyspace (Iterable[str]): A list of strings representing names of the nodes in a walk of the tree.
+            keyspace: Path to the target node
+
+        Returns:
+            Any: Value stored in the target node
 
         Raises:
-            KeyError: If `keyspace` is an invalid walk
+            KeyError: If the path does not exist
         """
         curr = self
         for name in keyspace:
@@ -244,8 +328,10 @@ class Tree:
         node being deleted.
 
         Args:
-            keyspace (Iterable[str]): A list of strings representing names of the nodes in a walk of the tree. This
-                                      cannot be empty.
+            keyspace: Path to the node to delete
+
+        Raises:
+            KeyError: If the path does not exist
         """
         if len(keyspace) == 0:
             raise ValueError(".delete cannot be called with an empty keyspace. Use `del` instead.")
@@ -264,11 +350,13 @@ class Tree:
         """Checks if a node exists in this Tree.
 
         Args:
-            keyspace (Iterable[str]): A list of strings representing names of the nodes in a walk of the tree. This
-                                      cannot be empty.
+            keyspace: Path to check
+
+        Returns:
+            bool: True if the path exists, False otherwise
         """
         if len(keyspace) == 0:
-            raise ValueError(".delete cannot be called with an empty keyspace. Use `del` instead.")
+            raise ValueError("Tree.contains cannot be called with an empty keyspace.")
 
         curr = self
         for name in keyspace:
@@ -277,23 +365,32 @@ class Tree:
             curr = curr.children[name]
         return True
 
-    def __getitem__(self, keyspace: Union[str, Iterable[str]]):
-        """See `get()`.
+    def __getitem__(self, keyspace: Union[str, Iterable[str]]) -> Any:
+        """Dictionary-like access to node values.
 
-        `node[('child', 'grandchild')]` will return the node named `grandchild` that is a depth of 2 from `self`.
+        Args:
+            keyspace: Single key or path to the target node
+
+        Returns:
+            Any: Value stored in the target node
+
+        Raises:
+            KeyError: If the path does not exist
         """
         if isinstance(keyspace, str):
             keyspace = [keyspace]
         return self.get(keyspace)
 
-    def __setitem__(self, keyspace: Union[str, Iterable[str]], value):
-        """See `insert_value()`.
+    def __setitem__(self, keyspace: Union[str, Iterable[str]], value: Any):
+        """Dictionary-like assignment to node values.
 
-        The last value of `keyspace` is assumed to be the name of the node to create.
+        Args:
+            keyspace: Single key or path to the target node
+            value: Value to store
 
-        `node[('child', 'grandchild')] = 5` will insert a node named 'grandchild' with a value of 5 in the node named
-        'child' that is a depth of 1 from `self`.
+        Raises:
+            KeyError: If the path does not exist
         """
-        if isinstance(keyspace, str):
+        if not isinstance(keyspace, list) and not isinstance(keyspace, tuple):
             keyspace = [keyspace]
         self.insert_value(keyspace[-1], value, keyspace=keyspace[:-1])

@@ -17,10 +17,10 @@ from typing import List
 
 import textwrap
 
+from . import smi as NvSMI
 from .constants import ComputeSM
 from .cupy import CUDAWrapper as cuda
 from .dla import cudla
-from .smi import NvSMI
 from ..interval import NumericRange
 from ..memory import Memory
 from ..system.accelerator import Accelerator, NUMASupported

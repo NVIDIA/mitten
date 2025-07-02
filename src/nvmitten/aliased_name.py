@@ -144,6 +144,7 @@ class AliasedNameEnum(Enum):
     def __hash__(self) -> int:
         return hash(self.value)
 
+    @property
     def valstr(self) -> str:
         """
         Convenience method to get the string representation of this Enum member's value.

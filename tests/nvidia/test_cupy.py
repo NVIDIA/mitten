@@ -16,7 +16,7 @@
 import numpy as np
 import pytest
 
-from nvmitten.nvidia.smi import NvSMI
+import nvmitten.nvidia.smi as NvSMI
 if not NvSMI.check_functional():
     pytest.skip("Skipping GPU-only tests", allow_module_level=True)
 
