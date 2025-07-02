@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM nvcr.io/nvidia/pytorch:24.04-py3
+FROM nvcr.io/nvidia/pytorch:24.12-py3
 SHELL ["/bin/bash", "-c"]
 ARG MLCOMMONS_DIR=/opt/mlcommons
 ARG MLPERF_INFERENCE_DIR=${MLCOMMONS_DIR}/inference
-ARG MLPERF_INFERENCE_HASH=7040f250887105c59f54829b69572bb7313d0b80
+ARG MLPERF_INFERENCE_HASH=b9f22d6c37fa9024616538516e1d3bb59dd7c019
 ARG LOADGEN_DIR=${MLPERF_INFERENCE_DIR}/loadgen
 ARG LOADGEN_BUILD_DIR=${LOADGEN_DIR}/build
 ARG LOADGEN_BUILD_TYPE=Release
@@ -67,10 +67,8 @@ RUN mkdir -p ${MLCOMMONS_DIR} \
  && cd ${MLPERF_INFERENCE_DIR} \
  && git fetch \
  && git checkout ${MLPERF_INFERENCE_HASH} \
- && git submodule update --init tools/submission/power-dev \
- && git submodule update --init third_party/pybind \
- && git submodule update --init language/bert/DeepLearningExamples \
- && git submodule update --init vision/medical_imaging/3d-unet-brats19/nnUnet
+ && git submodule init \
+ && git submodule update
 RUN mkdir -p ${LOADGEN_BUILD_DIR} \
  && cd ${LOADGEN_BUILD_DIR} \
  && cmake -DCMAKE_BUILD_TYPE=${LOADGEN_BUILD_TYPE} .. \
@@ -85,16 +83,16 @@ RUN python3 -m pip install onnx
 
 # Install TRT
 # 1. Remove the default TRT installation in the cuda / cudnn base container if existed
-RUN  apt remove -y tensorrt-dev libnvparsers-dev
+RUN apt remove -y tensorrt-dev  # libnvparsers-dev
 RUN rm -rf /usr/local/lib/python3.10/dist-packages/tensorrt*/
 
 # 2. Install TRT
-ARG TRT_DEB_URL=https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/
-ARG CUDA_VER=12.4
+ARG TRT_DEB_URL=https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/
+ARG CUDA_VER=12.6
 ARG TRT_MAJOR_VER=10
-ARG TRT_MINOR_VER=0
+ARG TRT_MINOR_VER=7
 ARG TRT_PATCH_VER=0
-ARG TRT_QA_VER=6
+ARG TRT_QA_VER=23
 ARG TRT_VER=${TRT_MAJOR_VER}.${TRT_MINOR_VER}.${TRT_PATCH_VER}.${TRT_QA_VER}
 RUN cd /tmp \
     && install_deb_pkg() { wget -q $TRT_DEB_URL/$1 -O $1 && dpkg -i $1 && rm $1; } \
@@ -116,12 +114,12 @@ RUN cd /tmp \
     && install_deb_pkg python3-libnvinfer-lean_${TRT_VER}-1+cuda${CUDA_VER}_amd64.deb \
     && install_deb_pkg python3-libnvinfer-dispatch_${TRT_VER}-1+cuda${CUDA_VER}_amd64.deb \
     && install_deb_pkg python3-libnvinfer-dev_${TRT_VER}-1+cuda${CUDA_VER}_amd64.deb \
-    && install_deb_pkg onnx-graphsurgeon_${TRT_VER}-1+cuda${CUDA_VER}_amd64.deb \
     && install_deb_pkg libnvinfer-bin_${TRT_VER}-1+cuda${CUDA_VER}_amd64.deb \
     && ln -sf /usr/src/tensorrt/bin/trtexec /usr/bin/trtexec \
     && unset -f install_deb_pkg
 
-RUN python3 -m pip install cuda-python==12.4.0
+RUN python3 -m pip install onnx_graphsurgeon --extra-index-url https://pypi.ngc.nvidia.com
+RUN python3 -m pip install cuda-python==12.6.2
 
 COPY . ${MITTEN_INSTALL_DIR}
 WORKDIR ${MITTEN_INSTALL_DIR}

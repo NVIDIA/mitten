@@ -390,3 +390,81 @@ class TestTree:
 
         assert [A, B, C, D, E, F, G, H] == A.as_list(order=Traversal.PreOrder)
         assert [C, E, D, B, G, F, H, A] == A.as_list(order=Traversal.PostOrder)
+
+    def test_from_dict_no_limit(self):
+        """Test structure:
+
+        A
+        |- B
+        |  |- C
+        |  |_ D
+        |     |_ E
+        |- F
+        |  |_ G
+        |_ H
+        """
+        d = {
+            "B": {
+                "C": 1,
+                "D": {
+                    "E": 2
+                },
+            },
+            "F": {
+                "G": 3
+            },
+            "H": 4
+        }
+
+        tree = Tree.from_dict(d, 'A')
+        assert len(tree.get_children()) == 3
+        assert len(tree["B"].get_children()) == 2
+        assert tree["B", "C"].value == 1
+        assert tree["B", "D", "E"].value == 2
+        assert tree["F", "G"].value == 3
+        assert tree["H"].value == 4
+
+        traversal = [k for _, k in tree.traversal(order=Traversal.OnlyLeaves, include_keys=True)]
+        assert traversal == [["B", "C"],
+                             ["B", "D", "E"],
+                             ["F", "G"],
+                             ["H"]]
+
+    def test_from_dict_limit(self):
+        """Test structure:
+
+        A
+        |- B
+        |  |- C
+        |  |_ D
+        |     |_ E
+        |- F
+        |  |_ G
+        |_ H
+        """
+        d = {
+            "B": {
+                "C": 1,
+                "D": {
+                    "E": 2
+                },
+            },
+            "F": {
+                "G": 3
+            },
+            "H": 4
+        }
+
+        tree = Tree.from_dict(d, 'A', max_depth=2)
+        assert len(tree.get_children()) == 3
+        assert len(tree["B"].get_children()) == 2
+        assert tree["B", "C"].value == 1
+        assert tree["B", "D"].value == {"E": 2}
+        assert tree["F", "G"].value == 3
+        assert tree["H"].value == 4
+
+        traversal = [k for _, k in tree.traversal(order=Traversal.OnlyLeaves, include_keys=True)]
+        assert traversal == [["B", "C"],
+                             ["B", "D"],
+                             ["F", "G"],
+                             ["H"]]

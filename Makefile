@@ -25,7 +25,7 @@ endif
 ifeq ($(DOCKER_GPU),)
     DOCKER_GPU_FLAGS =
 else
-    DOCKER_GPU_FLAGS = --gpus=$(DOCKER_GPU) -e NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES}
+    DOCKER_GPU_FLAGS = --gpus='"device=${DOCKER_GPU}"' -e NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES}
 endif
 DOCKER_REPO ?= gitlab-master.nvidia.com/mlpinf/mitten
 DOCKER_TAG ?= main-latest

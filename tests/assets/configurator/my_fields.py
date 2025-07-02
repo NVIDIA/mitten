@@ -10,6 +10,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvmitten.configurator import Field
 
 
-from .ops import *
+batch_size = Field("batch_size",
+                   description="A batch size for the model to use",
+                   from_string=int,
+                   disallow_default=True)
+
+
+use_some_kernel = Field("use_some_kernel",
+                        description="If set, will use some custom kernel.",
+                        from_string=bool)

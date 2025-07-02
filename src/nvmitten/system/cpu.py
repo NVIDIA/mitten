@@ -213,5 +213,5 @@ class CPU(Component):
                            vendor=self.vendor)
 
     def pretty_string(self) -> str:
-        s = f"{self.name} ({self.n_threads} Threads, {self.architecture.valstr()})"
+        s = f"{self.name} ({self.n_threads} Threads, {self.architecture.valstr})"
         return s

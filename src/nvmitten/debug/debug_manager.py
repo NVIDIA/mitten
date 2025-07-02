@@ -19,6 +19,7 @@ from types import TracebackType
 from typing import Dict, Optional, Tuple, Type, Union
 
 import datetime
+import functools
 import inspect
 import io
 import json
@@ -228,6 +229,7 @@ class _DebugManager:
             end of the function, `DebugManager.log_event` is called with `exc_info` populated.
         """
         if inspect.ismethod(obj) or inspect.isfunction(obj):
+            @functools.wraps(obj)
             def _wrapper(*args, **kwargs):
                 caller = f"{obj.__module__}.{obj.__qualname__}"
                 start_dt = datetime.datetime.now()
@@ -276,6 +278,7 @@ class _DebugManager:
                                      methods where you explicitly do not want to dump `self` / `cls`.
         """
         def decorator(func: object):
+            @functools.wraps(func)
             def _wrapper(*args, **kwargs):
                 _caller = caller if caller else f"{func.__module__}.{func.__qualname__}"
                 timestamp = datetime.datetime.now()
@@ -351,7 +354,7 @@ DebugManager = _DebugManager(log_dir=os.environ.get("NVMITTEN_LOG_DIR", None))
 
 
 class DebuggableMixin:
-    """ Mixin class to automatically add debugging and helper methods to a class. Subclasses of DebuggableMixin will
+    """Mixin class to automatically add debugging and helper methods to a class. Subclasses of DebuggableMixin will
     automatically have all unbound functions not prefixed by an underscore ('_') decorated by
     `DebugManager.register_event`. This means @classmethods will not be automatically marked as events, and must be
     manually registered.

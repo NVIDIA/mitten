@@ -33,26 +33,33 @@ class NVCCBuildExt(build_ext):
 
     @staticmethod
     def hasdla():
-        return os.path.exists(NVCCBuildExt.BINARY_PATH) and os.path.exists("/usr/local/cuda/include/cudla.h")
+        return NVCCBuildExt.hasnvcc() and os.path.exists("/usr/local/cuda/include/cudla.h")
+
+    @staticmethod
+    def hasnvcc():
+        return os.path.exists(NVCCBuildExt.BINARY_PATH)
 
 
 if __name__ == "__main__":
     # Build DLA extension only if nvcc and cudla.h are present
-    define_macros = []
-    libraries = []
-    extra_compile_args = []
-    extra_link_args = ["--shared"]
-    if NVCCBuildExt.hasdla():
-        define_macros.append(("HASDLA", 1))
-        libraries.append("cudla")
-        extra_compile_args.extend(["-Xcompiler", "-fPIC"])
-    dla_extension = Extension("nvmitten.nvidia.cudla",
-                              sources=["src/nvmitten/nvidia/dla.cpp"],
-                              define_macros=define_macros,
-                              libraries=libraries,
-                              extra_compile_args=extra_compile_args,
-                              extra_link_args=extra_link_args,
-                              optional=True)
+    if NVCCBuildExt.hasnvcc():
+        define_macros = []
+        libraries = []
+        extra_compile_args = []
+        extra_link_args = ["--shared"]
+        if NVCCBuildExt.hasdla():
+            define_macros.append(("HASDLA", 1))
+            libraries.append("cudla")
+            extra_compile_args.extend(["-Xcompiler", "-fPIC"])
+        dla_extension = Extension("nvmitten.nvidia.cudla",
+                                  sources=["src/nvmitten/nvidia/dla.cpp"],
+                                  define_macros=define_macros,
+                                  libraries=libraries,
+                                  extra_compile_args=extra_compile_args,
+                                  extra_link_args=extra_link_args,
+                                  optional=True)
 
-    setup(ext_modules=[dla_extension],
-          cmdclass={"build_ext": NVCCBuildExt})
+        setup(ext_modules=[dla_extension],
+              cmdclass={"build_ext": NVCCBuildExt})
+    else:
+        setup()

@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from os import PathLike
 from pathlib import Path
@@ -27,10 +28,9 @@ import onnx_graphsurgeon as gs
 import re
 import tensorrt as trt
 
-from .constants import TRT_LOGGER, ComputeSM, WorkloadSetting
-from .smi import NvSMI
-from ..constants import Precision
-from ..mlcommons.inference.constants import Benchmark, Scenario
+from . import smi as NvSMI
+from .constants import TRT_LOGGER, ComputeSM
+from ..constants import Precision, InputFormats
 from ..pipeline import ScratchSpace
 from ..utils import logging
 
@@ -238,11 +238,10 @@ class TRTBuilder(ABC):
     def __init__(self,
                  *args,
                  precision: Precision = Precision.FP32,
-                 input_dtype: _PotentiallyMultiple_T = "fp32",
-                 input_format: _PotentiallyMultiple_T = "linear",
+                 input_dtype: _PotentiallyMultiple_T = Precision.FP32,
+                 input_format: _PotentiallyMultiple_T = InputFormats.Linear,
                  workspace_size: int = 1 << 30,
                  num_profiles: int = 1,
-                 # TODO: Rename this to verbose_trt for clarity. --verbose will need to forwarded in Fields API.
                  verbose: bool = False,
                  verbose_nvtx: bool = False,
                  dla_core: int = None,
@@ -255,18 +254,16 @@ class TRTBuilder(ABC):
         self.precision = precision
 
         # Handle input_dtype and input_format.
-        assert type(input_dtype) is type(input_format), f"{self.__class__}.__init__: input_dtype and input_format " \
-                                                        f"must be the same type."
-        if isinstance(input_dtype, str):
-            self.input_dtype = [input_dtype]
-            self.input_format = [input_format]
-            self.num_inputs = 1
-        elif any(lambda _t: isinstance(input_dtype, _t), [tuple, list, dict]):
+        if isinstance(input_dtype, Iterable):
             self.input_dtype = copy.copy(input_dtype)
             self.input_format = copy.copy(input_format)
             assert len(self.input_dtype) == len(self.input_format), f"{self.__class__}.__init__: input_dtype and " \
                                                                     "input_format must be the same length."
             self.num_inputs = len(self.input_dtype)
+        else:
+            self.input_dtype = [input_dtype]
+            self.input_format = [input_format]
+            self.num_inputs = 1
 
         self.workspace_size = workspace_size
         self.num_profiles = num_profiles
@@ -454,6 +451,7 @@ class CalibratableTensorRTEngine:
                  calib_max_batches: int = 500,
                  force_calibration: bool = False,
                  calib_data_map: PathLike = None,
+                 calib_data_dir: PathLike = None,
                  cache_file: PathLike = None,
                  **kwargs):
         """Create a CalibratableTensorRTEngine. Must be used in conjunction with TRTBuilder.
@@ -464,135 +462,15 @@ class CalibratableTensorRTEngine:
         self.calib_max_batches = calib_max_batches
         self.force_calibration = force_calibration
         self.calib_data_map = Path(calib_data_map)
+        self.calib_data_dir = Path(calib_data_dir) if calib_data_dir else None
         self.cache_file = Path(cache_file)
 
     @property
     def need_calibration(self):
         return self.force_calibration or not self.cache_file.exists()
 
-    def get_calibrator(self, image_dir: PathLike) -> trt.IInt8Calibrator:
-        # Implementation must implement a trt.IInt8Calibrator and return an instance of it in this method.
-        return None
-
     def calibration_profiles(self, network: trt.INetworkDefinition, batch_size: int):
         for input_idx in range(network.num_inputs):
             input_shape = network.get_input(input_idx).shape
             input_shape[0] = self.calib_batch_size
             network.get_input(input_idx).shape = input_shape
-
-
-class MLPerfInferenceEngine:
-    """Used as a Mixin for an TRTBuilder that is also for an MLPerf Inference Benchmark.
-    """
-
-    def __init__(self,
-                 *args,
-                 system: None,
-                 benchmark: None,
-                 scenario: None,
-                 **kwargs):
-        """Create a TensorRTBuilderOp.
-        """
-        super().__init__(*args, **kwargs)
-
-        assert system is not None, "Must specify the system to build for"
-        assert benchmark is not None, "Must specify the benchmark (model name) for the engine"
-        assert scenario is not None, "Must specify the scenario for the engine"
-        self.system = system
-        self.benchmark = benchmark
-        self.scenario = scenario
-
-    def engine_dir(self, scratch_space: ScratchSpace) -> Path:
-        system_id = self.system.extras["id"]
-        name = self.benchmark.valstr()
-        scenario = self.scenario.valstr()
-        return scratch_space.path / "engines" / system_id / name / scenario
-
-    def engine_name(self,
-                    device_type: str,
-                    batch_size: int,
-                    precision: str,
-                    subnetwork_name: str = None,
-                    tag: str = "default") -> str:
-        """Gets the name of the engine, constructed from the device it is build for, the explicit batch size, and an
-        optional tag.
-
-        Args:
-            device_type (str): The device that TRT is building the engine for. Either "gpu" or "dla".
-            batch_size (int): The max batch size / explicit batch size the engine is built with.
-            precision (str): The lowest precision enabled for the engine.
-            tag (str): A tag to use for the engine. (Default: "default")
-            subnetwork_name (str): If applicable, name of the subnetwork the engine is built for. (Default: None)
-
-        Returns:
-            str: The name of the engine.
-        """
-        if not precision:
-            if hasattr(self, "precision"):
-                # TODO: self.precision is currently a string, but in the case it is an AliasedNameEnum member,
-                # add support to use .valstr()
-                precision = self.precision
-            else:
-                raise ValueError("precision cannot be None if self.precision is not set.")
-
-        if subnetwork_name:
-            device_type = f"{device_type}-{subnetwork_name}"
-
-        name = self.benchmark.valstr()
-        scenario = self.scenario.valstr()
-        return f"{name}-{scenario}-{device_type}-b{batch_size}-{precision}.{tag}.plan"
-
-
-class LegacyBuilder:
-    """Wraps around Mitten TensorRT EngineBuilder API to be compatible with the old EngineBuilder API from NVIDIA's v3.0
-    and prior submissions.
-
-    DeprecationWarning: This class will be removed when the main submission codebase is fully refactored.
-    """
-    def __init__(self, mitten_builder):
-        self.legacy_scratch = ScratchSpace("build")
-        self.mitten_builder = mitten_builder
-
-    def _get_engine_fpath(self, device_type, batch_size):
-        # TODO: This method only exists to maintain compatibility with the old API while the main submission codebase is
-        # being refactored. Remove this once the refactoring is complete.
-        # Note that calling this method outside of the old API may error.
-        engine_dir = self.mitten_builder.engine_dir(self.legacy_scratch)
-        engine_name = self.mitten_builder.engine_name(device_type,
-                                                      batch_size,
-                                                      self.mitten_builder.precision,
-                                                      tag=self.mitten_builder.config_ver)
-        return engine_dir / engine_name
-
-    def build_engines(self):
-        # Do not run the full Mitten pipeline yet. Invoke run manually.
-        self.mitten_builder.run(self.legacy_scratch, None)
-
-    # TODO: this function is deprecated and should be removed as the body of it has been moved to MLPerf code base
-    def calibrate(self):
-        # Do nothing if the builder isn't a CalibratableTensorRTEngine.
-        if not isinstance(self.mitten_builder, CalibratableTensorRTEngine):
-            if self.mitten_builder.verbose:
-                logging.info("Builder is not instance of CalibratableTensorRTEngine. Skipping calibrate.")
-            return
-
-        old_fields = dict()
-
-        def _cache_and_set(attr, val):
-            old_fields[attr] = getattr(self.mitten_builder, attr)
-            setattr(self.mitten_builder, attr, val)
-
-        # Unlike the old legacy API, we don't need to call .clear_cache(), since the calibrator is created in
-        # TRTBuilder.run() instead of __init__.
-        # Note that after calibration, TensorRT will still build the engine. In this case, we set the batch size to 1 to
-        # make it go faster, but I'm not sure how to skip it.
-        _cache_and_set("force_calibration", True)
-        _cache_and_set("batch_size", 1)
-        _cache_and_set("create_profiles", self.mitten_builder.calibration_profiles)
-
-        # Do not run the full Mitten pipeline yet. Invoke run manually.
-        self.mitten_builder.run(self.legacy_scratch, None)
-
-        # Restore old values
-        for attr, val in old_fields.items():
-            setattr(self.mitten_builder, attr, val)
