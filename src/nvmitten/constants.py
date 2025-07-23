@@ -84,6 +84,7 @@ class Precision(AliasedNameEnum):
     INT4: AliasedName = AliasedName("int4")
     INT8: AliasedName = AliasedName("int8")
     INT32: AliasedName = AliasedName("int32")
+    INT64: AliasedName = AliasedName("int64")
 
 
 @unique
