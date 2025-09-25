@@ -108,15 +108,8 @@ class _ModuleWrapper:
             return attr
 
 
-# cuda-python was refactored in 12.6.1:
-# https://nvidia.github.io/cuda-python/cuda-bindings/12.6.1/release/12.6.1-notes.html
 import cuda
-import packaging.version as versioning
-if versioning.parse(cuda.__version__) >= versioning.parse("12.6.1"):
-    from cuda.bindings import driver as cuda, runtime as cudart, nvrtc
-else:
-    from cuda import cuda, cudart, nvrtc
-
+from cuda import cuda, cudart, nvrtc
 
 CUDAWrapper = _ModuleWrapper(cuda,
                              cuda.CUresult,
