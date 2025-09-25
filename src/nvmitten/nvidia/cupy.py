@@ -109,7 +109,10 @@ class _ModuleWrapper:
 
 
 import cuda
-from cuda import cuda, cudart, nvrtc
+try:
+    from cuda.bindings import driver as cuda, runtime as cudart, nvrtc
+except AttributeError: # cuda version <= 12.6
+    from cuda import cuda, cudart, nvrtc
 
 CUDAWrapper = _ModuleWrapper(cuda,
                              cuda.CUresult,
