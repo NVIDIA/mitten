@@ -23,7 +23,7 @@ import importlib
 import logging
 import sys
 
-from .fields import Field, parse_fields
+from .fields import AutoConfStrategy, Field, parse_fields
 from ..importer import import_from
 from ..tree import Tree, Traversal
 
@@ -100,7 +100,15 @@ class Configuration(UserDict):
                 raise ValueError(f"{cls}::{f.name} disallows default values, but is not specified in configuration or CLI")
             elif f.name in cli_args:
                 # Apply CLI override
-                kwargs[kw] = cli_args[f.name]
+                if f.autoconf_strategy == AutoConfStrategy.DictUpdate:
+                    # Use merge strategy: combine configuration value with CLI override
+                    if f in self.data and isinstance(self.data[f], dict) and isinstance(cli_args[f.name], dict):
+                        kwargs[kw] = {**self.data[f], **cli_args[f.name]}
+                    else:
+                        kwargs[kw] = cli_args[f.name]
+                else:
+                    # Use replace strategy (default)
+                    kwargs[kw] = cli_args[f.name]
             elif f in self.data:
                 # Apply this configuration
                 kwargs[kw] = self.data[f]
