@@ -14,10 +14,19 @@ from __future__ import annotations
 
 import argparse
 import dataclasses as dcls
+import enum
 import os
 from pathlib import Path
 import inspect
 from typing import Any, Callable, Dict, List, Optional
+
+
+class AutoConfStrategy(enum.Enum):
+    """Strategy for applying configuration values to fields."""
+    Replace = "replace"
+    """Replace the entire value"""
+    DictUpdate = "dict_update"
+    """Merge dict values using dict.update()"""
 
 
 @dcls.dataclass(frozen=True)
@@ -48,6 +57,10 @@ class Field:
     from_environ: Optional[str] = None
     """str: If set, check this environment variable for value instead of using CLI flags. Implicitly sets
     disallow_argparse to True."""
+
+    autoconf_strategy: AutoConfStrategy = AutoConfStrategy.Replace
+    """AutoConfStrategy: Strategy for applying configuration values. Replace (default) replaces the entire value,
+    DictUpdate merges dict values using dict.update()."""
 
     _created_in: os.PathLike = dcls.field(init=False)
     """os.PathLike: Fields are meant to be singletons and can be organized by the files they are defined in. This
