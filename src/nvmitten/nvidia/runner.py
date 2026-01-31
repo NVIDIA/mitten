@@ -23,29 +23,36 @@ import ctypes
 import logging
 import numpy as np
 import os
-import tensorrt as trt
 
-from .constants import TRT_LOGGER
+from .constants import TRT_LOGGER, HAS_TENSORRT
 from .cupy import (
     CUDAWrapper as cuda,
     CUDARTWrapper as cudart,
     HostDeviceBuffer,
 )
 
+if HAS_TENSORRT:
+    import tensorrt as trt
+else:
+    trt = None
+
 # Numpy 1.24.0+ has removed np.bool as a datatype. TensorRT 8.6.0.6 (MLPINF v3.0 release version) has not captured this,
 # but was fixed in 8.6.1.
-if version.parse(trt.__version__) < version.parse("8.6.1"):
-    typemap = {
-        trt.float32: np.float32,
-        trt.float16: np.float16,
-        trt.int8: np.int8,
-        trt.int32: np.int32,
-        trt.bool: np.bool_,
-        trt.uint8: np.uint8,
-    }
-    nptype = typemap.get
+if HAS_TENSORRT:
+    if version.parse(trt.__version__) < version.parse("8.6.1"):
+        typemap = {
+            trt.float32: np.float32,
+            trt.float16: np.float16,
+            trt.int8: np.int8,
+            trt.int32: np.int32,
+            trt.bool: np.bool_,
+            trt.uint8: np.uint8,
+        }
+        nptype = typemap.get
+    else:
+        nptype = trt.nptype
 else:
-    nptype = trt.nptype
+    nptype = None
 
 
 def allocate_buffers(engine: trt.ICudaEngine,

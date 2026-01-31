@@ -15,14 +15,22 @@
 from __future__ import annotations
 from dataclasses import dataclass, asdict, field
 from enum import Enum, unique
-
-import tensorrt as trt
+from typing import Final, Optional
 
 from ..aliased_name import AliasedName, AliasedNameEnum
 from ..json_utils import JSONable
 
 
-TRT_LOGGER: Final[trt.Logger] = trt.Logger(trt.Logger.INFO)
+# Try to import TensorRT, set to None if not available
+try:
+    import tensorrt as trt
+    HAS_TENSORRT = True
+except ImportError:
+    trt = None
+    HAS_TENSORRT = False
+
+
+TRT_LOGGER: Optional[trt.Logger] = trt.Logger(trt.Logger.INFO) if HAS_TENSORRT else None
 
 
 @dataclass(frozen=True)

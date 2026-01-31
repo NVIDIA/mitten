@@ -26,13 +26,17 @@ import numpy as np
 import onnx
 import onnx_graphsurgeon as gs
 import re
-import tensorrt as trt
 
 from . import smi as NvSMI
-from .constants import TRT_LOGGER, ComputeSM
+from .constants import TRT_LOGGER, ComputeSM, HAS_TENSORRT
 from ..constants import Precision, InputFormats
 from ..pipeline import ScratchSpace
 from ..utils import logging
+
+if HAS_TENSORRT:
+    import tensorrt as trt
+else:
+    trt = None
 
 
 __doc__ = """This module contains NVIDIA implementations for MLPerf Inference Ops.

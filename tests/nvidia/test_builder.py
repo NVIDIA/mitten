@@ -15,12 +15,17 @@
 
 import numpy as np
 import pytest
-import tensorrt as trt
 
 import nvmitten.nvidia.smi as NvSMI
+from nvmitten.nvidia.constants import HAS_TENSORRT
+
 if not NvSMI.check_functional():
     pytest.skip("Skipping GPU-only tests", allow_module_level=True)
 
+if not HAS_TENSORRT:
+    pytest.skip("Skipping TensorRT tests - TensorRT not available", allow_module_level=True)
+
+import tensorrt as trt
 from nvmitten.nvidia.builder import *
 from nvmitten.nvidia.runner import EngineRunner
 from nvmitten.pipeline import *
