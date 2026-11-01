@@ -124,7 +124,7 @@ class Memory(JSONable):
         if type(base) is ByteSuffix:
             base, max_exp = base.value
 
-        if n < base:
+        if base == 1 or n < base:
             return Memory(n, ByteSuffix.B)
 
         exp = 0
