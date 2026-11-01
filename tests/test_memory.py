@@ -15,6 +15,8 @@
 
 import pytest
 import random
+import subprocess
+import sys
 
 from nvmitten.constants import ByteSuffix
 from nvmitten.memory import Memory
@@ -107,3 +109,34 @@ def test_memory_json():
     new_m = loads(s)
     assert m_1000 == new_m
     assert new_m.byte_suffix.value[0] == 1000
+
+
+@pytest.mark.parametrize(
+    "expression,expected_bytes",
+    [
+        ("Memory(1, ByteSuffix.B) + 1", 2),
+        ("Memory(1, ByteSuffix.B) + Memory(1, ByteSuffix.KB)", 1001),
+        ("Memory(3, ByteSuffix.B) - 1", 2),
+        ("Memory(3, ByteSuffix.B) - Memory(1, ByteSuffix.B)", 2),
+        ("Memory(2, ByteSuffix.B) * 3", 6),
+        ("Memory(6, ByteSuffix.B) / 2", 3),
+        ("loads(dumps(Memory(7, ByteSuffix.B)))", 7),
+        ("loads(dumps(Memory(1, ByteSuffix.GB).convert(ByteSuffix.B)))", 1000000000),
+        ("Memory.from_json({'base': 1, 'num_bytes': 7})", 7),
+        ("Memory(0, ByteSuffix.B) + 0", 0),
+    ],
+)
+def test_byte_based_memory_terminates(expression, expected_bytes):
+    # Bound the regression: base-one conversion used to loop indefinitely.
+    script = (
+        "from nvmitten.constants import ByteSuffix; "
+        "from nvmitten.memory import Memory; "
+        "from nvmitten.json_utils import loads, dumps; "
+        f"result = {expression}; "
+        "assert result.byte_suffix is ByteSuffix.B; "
+        "print(result.to_bytes())"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, check=True, timeout=5
+    )
+    assert int(result.stdout) == expected_bytes
